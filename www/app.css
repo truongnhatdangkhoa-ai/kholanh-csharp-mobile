@@ -1049,3 +1049,7 @@ body.has-totalbar .multibar { bottom: calc(var(--tabbar-h) + var(--safe-bottom) 
 .meta-row .list-meta:has(.empty) { flex-basis: 100%; text-align: left; }
 .meta-row:has(.list-meta .empty) .multi-btn { display: none; }
 .empty { border: 1px solid var(--line); }
+/* Đăng nhập bằng Google (bản web) */
+.gsi-sep { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px; color: var(--muted); font-size: calc(13px * var(--fs, 1)); }
+.gsi-sep::before, .gsi-sep::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.gsi-btn { display: flex; justify-content: center; min-height: 44px; }

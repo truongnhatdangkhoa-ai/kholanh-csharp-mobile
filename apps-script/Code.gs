@@ -170,6 +170,11 @@ function doPost(e) {
   var appToken = props.getProperty('APP_TOKEN');
   var pcToken = props.getProperty('PC_TOKEN');
   var action = String(req.action || '');
+  // ĐT 2.1 — ĐĂNG NHẬP BẰNG GOOGLE (bản web): điện thoại gửi id_token của Google (Google Identity Services) → Web App hỏi Google
+  // xác minh, tra Gmail trong tab PhanQuyen (cột email) → trả tên + mã truy cập của tài khoản đó; sau đó app gọi như đăng nhập thường.
+  if (action === 'dangNhapGoogle') {
+    try { return json_(googleLogin_(req.idToken)); } catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }
+  }
   var isPc = action.indexOf('pc.') === 0;
   var user = null;
   if (isPc) {
@@ -278,7 +283,7 @@ function doPost(e) {
 // (main.js › PQ_COLUMNS) và khi mở Cài Đặt → Điện Thoại sẽ đọc tab này về để gộp thay đổi từ điện thoại.
 // ---------------------------------------------------------------------------------------------
 // pcModules (PC 5.7) = module được mở trên PC ("M01,M02,CD_DONGBO,TAIKHOAN"). Từ điện thoại 3.1 (PC 7.43) điện thoại cũng sửa cột này, cùng luật với app PC (xem pcLimit_ / pqSave_).
-var PQ_COLS = ['tokenHash', 'ten', 'tenHienThi', 'quyen', 'kho', 'trangThai', 'capNhat', 'maTruyCap', 'pcModules'];
+var PQ_COLS = ['tokenHash', 'ten', 'tenHienThi', 'quyen', 'kho', 'trangThai', 'capNhat', 'maTruyCap', 'pcModules', 'email']; // email: Gmail để 'Đăng nhập bằng Google' (ĐT 2.1)
 var PQ_USER_OK_ = /^[A-Za-z0-9._-]{1,40}$/;
 var PQ_TOKEN_OK_ = /^[A-Za-z0-9\-_.@#!]+$/;
 
@@ -520,6 +525,24 @@ function emailTatTuDong() {
   ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'emailQuetTuDong') ScriptApp.deleteTrigger(t); });
 }
 
+// Mã OAuth loại "Web application" (dự án Google Cloud kholanhcloud, nguồn https://truongnhatdangkhoa-ai.github.io) — Client ID không phải mật khẩu.
+var GOOGLE_WEB_CLIENT_ID = '688518280070-vicnen62bp64u8a464ou7ijv3s8ukoej.apps.googleusercontent.com';
+function googleLogin_(idToken) {
+  idToken = String(idToken || '');
+  if (!idToken || idToken.length > 4096) return { ok: false, error: 'Thiếu mã đăng nhập Google.' };
+  var res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken), { muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) return { ok: false, code: 'AUTH', error: 'Mã đăng nhập Google không hợp lệ hoặc đã hết hạn — thử lại.' };
+  var p = JSON.parse(res.getContentText() || '{}');
+  if (p.aud !== GOOGLE_WEB_CLIENT_ID) return { ok: false, code: 'AUTH', error: 'Mã đăng nhập Google không dành cho Kho Lạnh.' };
+  if (p.iss !== 'https://accounts.google.com' && p.iss !== 'accounts.google.com') return { ok: false, code: 'AUTH', error: 'Mã đăng nhập không phải của Google.' };
+  if (String(p.email_verified) !== 'true') return { ok: false, code: 'AUTH', error: 'Tài khoản Google này chưa xác minh email.' };
+  var email = String(p.email || '').trim().toLowerCase();
+  var row = pqRead_().filter(function (o) { return o.email && o.email.toLowerCase() === email; })[0];
+  if (!row) return { ok: false, code: 'AUTH', error: 'Tài khoản Google ' + email + ' chưa được gán cho người dùng nào. Nhờ Quản trị gán ở Cài đặt › Quản lý người dùng (ô Email Google).' };
+  if (row.trangThai !== 'Bật') return { ok: false, code: 'AUTH', error: 'Tài khoản gán với Google này đang bị khóa. Liên hệ người quản lý.' };
+  if (!row.maTruyCap) return { ok: false, code: 'AUTH', error: 'Tài khoản này chưa có mã truy cập — nhờ Quản trị đặt mã.' };
+  return { ok: true, ten: row.ten, hienThi: row.tenHienThi || row.ten, token: row.maTruyCap, email: email };
+}
 function pqRead_() {
   var t = readTab_(TAB.PQ), h = t.headers, out = [];
   t.rows.forEach(function (r) {
@@ -573,7 +596,7 @@ function pqList_(me) {
       return {
         ten: o.ten, tenHienThi: o.tenHienThi || o.ten, quyen: role,
         kho: kho, pc: isAdminTen_(o.ten) ? PQ_PC_.slice() : pcLimit_(pcClean_(o.pcModules), role),
-        bat: o.trangThai === 'Bật', token: ok ? o.maTruyCap : '', khoa: !ok
+        bat: o.trangThai === 'Bật', token: ok ? o.maTruyCap : '', khoa: !ok, email: o.email || ''
       };
     })
   };
@@ -590,6 +613,8 @@ function pqSave_(me, u) {
   var pcIn = pcClean_(u.pc);
   var hienThi = String(u.tenHienThi || '').trim().slice(0, 60) || ten;
   var token = String(u.token || '').trim();
+  var email = u.email === undefined ? null : String(u.email || '').trim().toLowerCase(); // null = app bản cũ không gửi → giữ email đang có
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('Email Google không hợp lệ.');
   var props = PropertiesService.getScriptProperties();
   if (isAdminTen_(ten)) throw new Error('Tài khoản admin là tài khoản chính — chỉ sửa được trên máy PC (Cài đặt › Tài khoản).');
   var meLv = userLv_(me), self = pqIsSelf_(me, ten);
@@ -624,10 +649,11 @@ function pqSave_(me, u) {
     if (token === props.getProperty('PC_TOKEN') || token === props.getProperty('APP_TOKEN')) throw new Error('Mã trùng mã chung (PC_TOKEN / APP_TOKEN) — chọn mã khác.');
     list.forEach(function (o, i) {
       if (i !== idx && o.maTruyCap.toLowerCase() === token.toLowerCase()) throw new Error('Mã này đang là mã của \"' + (o.tenHienThi || o.ten) + '\" — chọn mã khác.');
+      if (email && i !== idx && String(o.email || '').toLowerCase() === email) throw new Error('Email ' + email + ' đã gán cho \"' + (o.tenHienThi || o.ten) + '\".');
     });
     var row = { tokenHash: sha256Hex_(token), ten: cur ? cur.ten : ten, tenHienThi: hienThi, quyen: quyen, kho: kho.join(','),
       trangThai: bat ? 'Bật' : 'Tắt', capNhat: new Date().toISOString(), maTruyCap: token,
-      pcModules: pcOut.join(',') };
+      pcModules: pcOut.join(','), email: email === null ? (cur ? cur.email : '') : email };
     if (idx >= 0) list[idx] = row; else list.push(row);
   });
   return pqList_(me);

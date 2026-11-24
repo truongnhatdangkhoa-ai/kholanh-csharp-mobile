@@ -14,6 +14,13 @@
 > `www/app-config.js` đã có sẵn link Web App của Sheet MỚI → người dùng chỉ nhập tài khoản + mật khẩu.
 > **Không** dán link Sheet cũ vào app PC C# khi app PC cũ còn chạy (2 app PC cùng ghi 1 Sheet sẽ đè số liệu của nhau).
 
+### Đăng nhập bằng Google (2.1)
+- **Bản web** (mở `https://truongnhatdangkhoa-ai.github.io/kholanh-csharp-mobile/` trên Chrome — có thể "Thêm vào màn hình chính"): màn hình Kết nối có nút **Đăng nhập bằng Google** — hiện sẵn tài khoản Google đang đăng nhập trên trình duyệt, chạm 1 lần là vào.
+- Quản trị gán Gmail cho từng người: **Cài đặt › Quản lý người dùng** › ô **Email Google** (cột `email` của tab PhanQuyen).
+- Web App: dán lại `apps-script/Code.gs` → Lưu → **Triển khai › Quản lý triển khai › ✏ › Phiên bản mới › Triển khai** (lần đầu Google hỏi thêm quyền "kết nối dịch vụ bên ngoài" để xác minh mã đăng nhập với Google — đồng ý). Đường dẫn giữ nguyên.
+- Mã OAuth loại Web của dự án Google Cloud `kholanhcloud` (`GOOGLE_WEB_CLIENT_ID` trong `www/app.js` + `Code.gs`), nguồn được phép `https://truongnhatdangkhoa-ai.github.io`.
+- **App APK chưa có** (Google chặn đăng nhập trong khung web của app) — cần đăng nhập Google gốc Android + khóa ký cố định, làm sau.
+
 ### Khác bản cũ (2.0 — 24/11/2026)
 - Giao diện **"Băng sạch"** giống app PC mới: nền xám lạnh nhạt, 1 màu nhấn xanh băng `#1F6FD6`, màu chỉ để báo trạng thái
   (nền nhạt + chữ đậm: đạt #1E7B4A · chờ #9A5B00 · lỗi #B42318), chế độ Tối thiết kế riêng (giống `AppTheme.DesignedDark` bên PC). Đổi màu tại các biến đầu `www/app.css`.

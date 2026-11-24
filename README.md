@@ -80,8 +80,8 @@ theo cách này URL giữ nguyên, không phải nhập lại ở PC hay điện
 
 ## Bước 2 — Kết nối app PC
 
-App PC → **Cài Đặt** → tab **Điện Thoại**: dán **URL Web App**, nhập **PC_TOKEN** →
-**Lưu cấu hình** → **Kiểm tra kết nối** → **⬆ Đẩy tồn kho lên**. Mở lại Google Sheet sẽ thấy
+App PC **C#** (mới) → menu **Hệ thống › Đồng bộ điện thoại**: dán **URL Web App** (của Sheet MỚI), nhập **PC_TOKEN** →
+**Lưu** → **Kiểm tra kết nối** → **Đẩy tồn kho lên**. Mở lại Google Sheet sẽ thấy
 đủ 6 tab có dữ liệu.
 
 ## Bước 3 — Dùng thử trên trình duyệt (chưa cần build APK)

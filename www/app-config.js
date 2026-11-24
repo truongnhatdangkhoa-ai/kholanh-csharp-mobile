@@ -8,5 +8,5 @@
    Link KHÔNG đủ để vào dữ liệu — vẫn phải có ID + mật khẩu hợp lệ.
    ========================================================================== */
 window.KLANAN_CONFIG = {
-  url: 'https://script.google.com/macros/s/AKfycbxRpvFkCmWjYDQqF5OSoEarCpaLxbTi87o-NPkTTpuT27RRqM2KW4-J3_KSglFa1U9eZQ/exec'
+  url: ''   // bản mới: để trống — dán link Web App của Google Sheet MỚI (Apps Script của hệ thống mới) khi đã tạo
 };

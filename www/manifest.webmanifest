@@ -1,6 +1,6 @@
 {
-  "name": "Kho Lạnh An An",
-  "short_name": "Kho An An",
+  "name": "Kho Lạnh An An (bản mới)",
+  "short_name": "Kho mới",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#FFFFFF",

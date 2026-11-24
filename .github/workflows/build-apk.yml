@@ -126,11 +126,11 @@ jobs:
       - name: Đổi tên file APK
         run: |
           mkdir -p dist
-          cp android/app/build/outputs/apk/debug/app-debug.apk "dist/KhoLanhAnAn-${GITHUB_RUN_NUMBER}.apk"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "dist/KhoLanhMoi-${GITHUB_RUN_NUMBER}.apk"
 
       - name: Lưu file APK để tải về
         uses: actions/upload-artifact@v4
         with:
-          name: KhoLanhAnAn-APK
+          name: KhoLanhMoi-APK
           path: dist/*.apk
           retention-days: 30

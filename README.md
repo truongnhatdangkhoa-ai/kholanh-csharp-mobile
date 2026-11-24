@@ -1,11 +1,39 @@
-# Kho Lạnh An An — Bản Điện Thoại
+# Kho Lạnh An An — Bản Điện Thoại MỚI (dùng với app PC C#)
+
+> **Repo này là bản điện thoại mới**, đi cùng app PC mới viết bằng C# (`truongnhatdangkhoa-ai/kholanh-csharp`).
+> Bản cũ (`kholanh-anan-mobile` + app PC Electron `kholanh-anan-pc`) **giữ nguyên, vẫn dùng bình thường**.
+> Hai hệ thống tách hẳn nhau để test bản mới không ảnh hưởng số liệu đang dùng thật:
+>
+> | | Bản cũ (đang dùng) | Bản mới (test) |
+> |---|---|---|
+> | App PC | Electron `kholanh-anan-pc` | C# `kholanh-csharp` (trang Hệ thống › Đồng bộ điện thoại) |
+> | App điện thoại | `kholanh-anan-mobile` — "Kho Lạnh An An", mã `vn.anan.kholanh` | **repo này** — "Kho Lạnh (mới)", mã `vn.anan.kholanh.moi` |
+> | Google Sheet + Apps Script | Sheet cũ | **Sheet MỚI riêng** (tạo theo Bước 1 bên dưới) |
+>
+> Mã app khác nhau nên **cài cả 2 app trên cùng 1 điện thoại** được (bản mới không đè bản cũ).
+> `www/app-config.js` để trống link → lần đầu mở app mới nhập link Web App của Sheet MỚI + tài khoản.
+> **Không** dán link Sheet cũ vào app PC C# khi app PC cũ còn chạy (2 app PC cùng ghi 1 Sheet sẽ đè số liệu của nhau).
+
+### Khác bản cũ (2.0 — 24/11/2026)
+- Giao diện **"Băng sạch"** giống app PC mới: nền xám lạnh nhạt, 1 màu nhấn xanh băng `#1F6FD6`, màu chỉ để báo trạng thái
+  (nền nhạt + chữ đậm: đạt #1E7B4A · chờ #9A5B00 · lỗi #B42318), chế độ Tối thiết kế riêng (giống `AppTheme.DesignedDark` bên PC). Đổi màu tại các biến đầu `www/app.css`.
+- Icon / logo mới (như app PC mới: kho + bông tuyết), nhãn **MỚI** cạnh tên app; tên trên màn hình điện thoại "Kho Lạnh (mới)".
+- Màn hình chưa có số liệu: thông báo rộng hết dòng (trước bị ép nửa màn hình bên cạnh nút Chọn nhiều).
+- Giao thức với Google Sheet / Apps Script (`apps-script/Code.gs`) **giữ nguyên bản cũ** — app PC C# 1.55+ đã nói đủ giao thức này.
+
+| Tổng quan | Tồn kho | Kết nối | Tối |
+|---|---|---|---|
+| ![](docs/anh/01-tong-quan.png) | ![](docs/anh/02-ton-kho.png) | ![](docs/anh/03-ket-noi.png) | ![](docs/anh/04-tong-quan-toi.png) |
+
+---
+
 
 Ứng dụng điện thoại để **xem tồn kho** (Module 01, Module 02, Vị trí, Vị trí Bột) và **gửi phiếu xuất**
 (từ 4 nguồn đang bật: Tồn kho gửi M02, Tồn kho An An M01, Tồn theo vị trí M01, Vị trí Bột M01 — NXT Bột/Sốt M03
 **đang ẩn** trên điện thoại, xem `HIDDEN_SOURCES` trong `www/app.js`; NXT TNK/TGC M04 và Lưu trữ cá nhân đã XÓA hẳn từ ĐT 1.42) về app PC, và **xuất file phiếu (PDF / Excel / ảnh PNG) ngay trên điện thoại**. Điện thoại không nói chuyện trực tiếp với PC — cả hai cùng đọc/ghi 1 Google Sheet:
 
 ```
- App PC (Electron)                 Google Sheet                  Điện thoại
+ App PC (C#)                       Google Sheet                  Điện thoại
  ─────────────────                 ────────────                  ──────────
  đẩy tồn kho  ───────────────▶  TonKho_M01 / M02 / ViTri  ◀─── xem tồn
                                  Meta (lastPushAt)
@@ -23,7 +51,7 @@
 ## Bước 1 — Tạo Google Sheet và cài Apps Script (làm 1 lần, trên máy tính)
 
 1. Vào https://sheets.google.com → tạo 1 bảng tính trống, đặt tên tuỳ ý
-   (vd "KLANAN Online"). Không cần tạo tab nào — app PC tự tạo.
+   (vd **"KLANAN Online — BẢN MỚI"** — phải là Sheet MỚI, không dùng lại Sheet của bản cũ). Không cần tạo tab nào — app PC tự tạo.
 2. Trong bảng tính đó: menu **Tiện ích mở rộng → Apps Script**.
 3. Xóa code mẫu, dán **toàn bộ** nội dung file `apps-script/Code.gs` → bấm 💾 **Lưu**.
 4. Đặt 2 mã truy cập: bấm ⚙️ **Cài đặt dự án** (thanh bên trái) → cuối trang

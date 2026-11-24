@@ -65,12 +65,12 @@ jobs:
         run: |
           mkdir -p dist/Payload
           cp -R build/App.xcarchive/Products/Applications/App.app dist/Payload/
-          cd dist && zip -qry "KhoLanhAnAn-${GITHUB_RUN_NUMBER}-chua-ky.ipa" Payload && rm -rf Payload
+          cd dist && zip -qry "KhoLanhMoi-${GITHUB_RUN_NUMBER}-chua-ky.ipa" Payload && rm -rf Payload
           ls -la
 
       - name: Lưu file .ipa để tải về
         uses: actions/upload-artifact@v4
         with:
-          name: KhoLanhAnAn-IPA
+          name: KhoLanhMoi-IPA
           path: dist/*.ipa
           retention-days: 30

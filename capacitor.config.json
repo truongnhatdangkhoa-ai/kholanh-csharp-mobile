@@ -1,0 +1,12 @@
+{
+  "appId": "vn.anan.kholanh",
+  "appName": "Kho Lạnh An An",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}

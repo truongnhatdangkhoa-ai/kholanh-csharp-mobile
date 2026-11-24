@@ -1,0 +1,83 @@
+# Đăng thư mục www/ lên GitHub Pages — dùng cho 2 việc:
+#   1. Bản web chạy thử trên trình duyệt (như trước).
+#   2. NGUỒN TỰ CẬP NHẬT cho app APK (www/live-update.js): update.json (danh sách file + sha256) + các file www.
+# Cần bật 1 lần: Settings → Pages → Source: "GitHub Actions". Repo để Public (tài khoản GitHub miễn phí).
+# Trong www/ và Code.gs KHÔNG chứa mã truy cập nào (www/app-config.js chỉ có link Web App, vẫn cần ID + mật khẩu mới vào được) nên để public vẫn an toàn —
+# mã APP_TOKEN/PC_TOKEN chỉ nằm trong Thuộc tính tập lệnh của Apps Script.
+name: Web preview + cập nhật app
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ['www/**', 'native-level.txt', '.github/workflows/web-preview.yml']
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+
+      # GIỐNG hệt bước cùng tên trong build-apk.yml — mã phiên bản = 7 ký tự đầu mã commit, nên APK và
+      # Pages build từ CÙNG 1 commit sẽ cùng mã (app không tải lại bản mình đang có).
+      - name: Ghi mã phiên bản + địa chỉ cập nhật vào www/
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REPO="${{ github.event.repository.name }}"
+          if [ "$(echo "$REPO" | tr '[:upper:]' '[:lower:]')" = "$OWNER.github.io" ]; then BASE="https://$OWNER.github.io/"; else BASE="https://$OWNER.github.io/$REPO/"; fi
+          VER=$(echo "${{ github.sha }}" | cut -c1-7)
+          # Chịu được khi thiếu file native-level.txt (quên tải lên) → mặc định 1; không để lệnh con làm dừng build.
+          NATIVE=$( (cat native-level.txt 2>/dev/null || echo 1) | tr -dc '0-9' ); NATIVE=${NATIVE:-1}
+          MSG=$( (git log -1 --pretty=%s 2>/dev/null || echo "") | head -c 200 )
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          jq -n --arg v "$VER" --argjson n "$NATIVE" --arg d "$DATE" --arg m "$MSG" '{version:$v,nativeLevel:$n,date:$d,message:$m}' > www/bundle-version.json
+          jq -n --arg b "$BASE" '{base:$b}' > www/live-update-config.json
+          echo "VER=$VER" >> $GITHUB_ENV; echo "NATIVE=$NATIVE" >> $GITHUB_ENV; echo "MSG=$MSG" >> $GITHUB_ENV; echo "DATE=$DATE" >> $GITHUB_ENV
+          cat www/bundle-version.json www/live-update-config.json
+
+      # Kiểm tra cú pháp mọi file .js của www (trừ thư viện nén sẵn) — lỗi thì DỪNG, không đăng bản hỏng
+      # (điện thoại tải bản lỗi về sẽ không khởi động được giao diện).
+      - name: Kiểm tra lỗi cú pháp JavaScript
+        run: |
+          for f in $(find www -name "*.js" -not -path "www/lib/*"); do node --check "$f" || { echo "::error file=$f::Lỗi cú pháp — không đăng bản cập nhật"; exit 1; }; done
+          echo "OK"
+
+      # update.json = mã bản + danh sách MỌI file của www kèm sha256 (live-update.js tải từng file, kiểm từng file).
+      - name: Tạo danh sách file cập nhật (update.json)
+        run: |
+          mkdir -p _site
+          cp -r www/. _site/
+          python3 - <<'PY'
+          import hashlib, json, os
+          files = []
+          for root, _, names in os.walk('www'):
+              for n in sorted(names):
+                  full = os.path.join(root, n)
+                  rel = os.path.relpath(full, 'www').replace(os.sep, '/')
+                  data = open(full, 'rb').read()
+                  files.append({'p': rel, 's': hashlib.sha256(data).hexdigest(), 'n': len(data)})
+          files.sort(key=lambda f: f['p'])
+          out = {'version': os.environ['VER'], 'nativeLevel': int(os.environ['NATIVE']), 'message': os.environ.get('MSG', ''),
+                 'date': os.environ.get('DATE', ''), 'files': files}
+          json.dump(out, open('_site/update.json', 'w', encoding='utf-8'), ensure_ascii=False)
+          print(len(files), 'file,', sum(f['n'] for f in files), 'byte')
+          PY
+          head -c 400 _site/update.json; echo
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4

@@ -8,5 +8,5 @@
    Link KHÔNG đủ để vào dữ liệu — vẫn phải có ID + mật khẩu hợp lệ.
    ========================================================================== */
 window.KLANAN_CONFIG = {
-  url: ''   // bản mới: để trống — dán link Web App của Google Sheet MỚI (Apps Script của hệ thống mới) khi đã tạo
+  url: 'https://script.google.com/macros/s/AKfycbyUgzXV6Nvkurd6QSuqHpvMHOwbzP5zKsXb19flE8HgAL3U_RxcyhTw0uwk_usUIqdr/exec'   // Google Sheet MỚI (hệ thống app PC C#) — KHÔNG phải link của bản cũ
 };

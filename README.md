@@ -11,12 +11,13 @@
 > | Google Sheet + Apps Script | Sheet cũ | **Sheet MỚI riêng** (tạo theo Bước 1 bên dưới) |
 >
 > Mã app khác nhau nên **cài cả 2 app trên cùng 1 điện thoại** được (bản mới không đè bản cũ).
-> `www/app-config.js` để trống link → lần đầu mở app mới nhập link Web App của Sheet MỚI + tài khoản.
+> `www/app-config.js` đã có sẵn link Web App của Sheet MỚI → người dùng chỉ nhập tài khoản + mật khẩu.
 > **Không** dán link Sheet cũ vào app PC C# khi app PC cũ còn chạy (2 app PC cùng ghi 1 Sheet sẽ đè số liệu của nhau).
 
 ### Khác bản cũ (2.0 — 24/11/2026)
 - Giao diện **"Băng sạch"** giống app PC mới: nền xám lạnh nhạt, 1 màu nhấn xanh băng `#1F6FD6`, màu chỉ để báo trạng thái
   (nền nhạt + chữ đậm: đạt #1E7B4A · chờ #9A5B00 · lỗi #B42318), chế độ Tối thiết kế riêng (giống `AppTheme.DesignedDark` bên PC). Đổi màu tại các biến đầu `www/app.css`.
+- Link Web App của Sheet mới cài sẵn trong app (ẩn ô nhập link).
 - Icon / logo mới (như app PC mới: kho + bông tuyết), nhãn **MỚI** cạnh tên app; tên trên màn hình điện thoại "Kho Lạnh (mới)".
 - Màn hình chưa có số liệu: thông báo rộng hết dòng (trước bị ép nửa màn hình bên cạnh nút Chọn nhiều).
 - Giao thức với Google Sheet / Apps Script (`apps-script/Code.gs`) **giữ nguyên bản cũ** — app PC C# 1.55+ đã nói đủ giao thức này.

@@ -8,3 +8,4 @@
 - Giao diện, chú thích, thông báo: tiếng Việt. Phiên bản hiện ở `APP_VERSION` (`www/app.js`).
 - Chụp thử trên trình duyệt: Playwright mở `www/index.html` (390 × 844); ảnh mẫu ở `docs/anh/`.
 - CI: `build-apk.yml` (APK mỗi lần đẩy), `build-ios.yml`, `web-preview.yml` (GitHub Pages = nguồn tự cập nhật app; cần bật Settings → Pages → Source: GitHub Actions).
+- Code.gs có phần cho app PC C#: tài khoản dùng chung (tab `TaiKhoan`, `tkPost_`, `pc.tkCaiMa`, `pc.tkDatLaiMa` đặt lại mã — PC 1.109), máy PC mới chỉ cần đăng nhập (`pcDangNhap` → `dnPost_`, PBKDF2 JS thuần `dnKiemMk_`; đối chiếu bằng `kholanh-csharp/tests/KhoLanh.Core.Tests/Data/dangnhap-maymoi-golden.gen.js`), `pc.ghMayMoi` (Thuộc tính `KL_GH_TOKEN`). Sửa Code.gs xong: dán vào Apps Script + Triển khai › Quản lý triển khai › Phiên bản mới (giữ đường dẫn).

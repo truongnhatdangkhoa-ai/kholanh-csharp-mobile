@@ -179,6 +179,8 @@ function doPost(e) {
   if (TK_ACTIONS_.indexOf(action) >= 0) return tkPost_(req, props);
   // ĐT 2.1 — ĐĂNG NHẬP BẰNG GOOGLE (bản web): điện thoại gửi id_token của Google (Google Identity Services) → Web App hỏi Google
   // xác minh, tra Gmail trong tab PhanQuyen (cột email) → trả tên + mã truy cập của tài khoản đó; sau đó app gọi như đăng nhập thường.
+  // PC 1.106 — MÁY PC MỚI CHỈ CẦN ĐĂNG NHẬP: tên + mật khẩu kiểm bằng mã băm PBKDF2 ở tab TaiKhoan → trả mã đọc tài khoản + PC_TOKEN (xem dnPost_).
+  if (action === 'pcDangNhap') return json_(dnPost_(req, props));
   if (action === 'dangNhapGoogle') {
     try { return json_(googleLogin_(req.idToken)); } catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }
   }
@@ -280,6 +282,10 @@ function doPost(e) {
       case 'pc.ghSourceSet': return json_(pcGhSourceSet_(req));
       // PC 1.104 — đặt 2 mã của tài khoản dùng chung (tab TaiKhoan) vào Thuộc tính tập lệnh.
       case 'pc.tkCaiMa': return json_(tkCaiMa_(props, req.maDoc, req.maQuanTri));
+      // PC 1.109 — Quản trị ĐẶT LẠI 2 mã (khi không máy nào còn đúng mã cũ: "đã bật từ một máy khác" / "Sai mã kết nối").
+      case 'pc.tkDatLaiMa': return json_(tkDatLaiMa_(props, req.maDoc, req.maQuanTri));
+      // PC 1.106 — máy Quản trị đẩy mã cập nhật phần mềm (GitHub) để máy mới đăng nhập xong tự cập nhật được.
+      case 'pc.ghMayMoi': { var gh = String(req.gh || '').trim(); if (gh) props.setProperty('KL_GH_TOKEN', gh); else props.deleteProperty('KL_GH_TOKEN'); return json_({ ok: true }); }
       default: return json_({ ok: false, error: 'Không có chức năng "' + action + '".' });
     }
   } catch (err) {
@@ -1765,4 +1771,207 @@ function tkSave_(sh, u) {
 function tkSafe_(v) {
   var s = v === undefined || v === null ? '' : String(v);
   return /^[=+\-@]/.test(s) ? "'" + s : s;
+}
+
+// PC 1.109 — đặt lại 2 mã tài khoản dùng chung (PC_TOKEN, chỉ Quản trị trên app PC mới có nút). Ghi đè mã cũ dù máy khác đã đặt;
+// các máy giữ mã cũ sẽ báo "Sai mã kết nối" rồi tự nối lại khi đăng nhập (pcDangNhap). Tab TaiKhoan giữ nguyên — app PC hỏi Quản trị
+// "dùng danh sách trên Sheet" hay "thay bằng danh sách máy này" rồi mới replaceAll.
+function tkDatLaiMa_(props, maDoc, maQt) {
+  maDoc = String(maDoc || ''); maQt = String(maQt || '');
+  if (!TK_MA_OK_.test(maDoc) || !TK_MA_OK_.test(maQt)) return { ok: false, error: 'Mã tài khoản không hợp lệ.' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var had = !!props.getProperty('TK_MA_DOC');
+    props.setProperties({ TK_MA_DOC: maDoc, TK_MA_QUAN_TRI: maQt });
+    var sh = tkTab_();
+    var n = tkRead_(sh).filter(function (o) { return String(o.username).replace(/^'/, '').charAt(0) !== '#'; }).length;
+    return { ok: true, daCo: had, soTaiKhoan: n };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ============================================================================================
+// MÁY PC MỚI CHỈ CẦN ĐĂNG NHẬP (PC 1.106 — lệnh pcDangNhap, không cần mã)
+// Máy mới gửi { action: 'pcDangNhap', ten, matKhau } → kiểm mật khẩu bằng chính mã băm ở tab TaiKhoan
+// (PBKDF2-HMAC-SHA256, 100 000 vòng, 32 byte; cột mat_khau_bam / muoi dạng "h:<hex>" hoặc base64 — giống AuthService của app PC).
+// Đúng → { ok, ten, maDoc: TK_MA_DOC, pcToken: PC_TOKEN, gh: KL_GH_TOKEN } (KHÔNG trả mã quản trị). Sai → báo, đếm lần sai:
+//   5 lần / tài khoản trong 15 phút → khóa tài khoản đó 15 phút (khoa: true); 30 lần chung trong 10 phút → khóa mọi lệnh này 10 phút.
+// Trả lời: chuaBat (tab TaiKhoan chưa bật / trống), chuaCo (không có tài khoản), khoa (đang khóa), error "Sai tên đăng nhập…" (sai mật khẩu / tắt).
+// dnKiemMk_ viết JavaScript thuần (không dùng Utilities) để kiểm bằng node — tests/KhoLanh.Core.Tests/Data/dangnhap-maymoi-golden.gen.js của app PC.
+// ============================================================================================
+var DN_SAI_TK = 5, DN_KHOA_TK_PHUT = 15, DN_SAI_CHUNG = 30, DN_CUA_SO_PHUT = 10, DN_KHOA_CHUNG_PHUT = 10, DN_VONG = 100000;
+
+function dnPost_(req, props) {
+  try {
+    if (!props.getProperty('TK_MA_DOC')) return { ok: false, chuaBat: true, error: 'Google Sheet chung chưa bật tài khoản dùng chung.' };
+    var cache = CacheService.getScriptCache();
+    if (cache.get('dnKhoaChung')) return { ok: false, khoa: true, error: 'Có quá nhiều lần đăng nhập sai — tạm khóa đăng nhập máy mới ' + DN_KHOA_CHUNG_PHUT + ' phút.' };
+    var ten = String(req.ten || '').replace(/^'/, '').trim(), mk = String(req.matKhau || '');
+    if (!ten || !mk) return { ok: false, error: 'Nhập tên đăng nhập và mật khẩu.' };
+    if (ten.charAt(0) === '#' || ten.length > 60) return { ok: false, error: 'Sai tên đăng nhập hoặc mật khẩu.' };
+    var key = 'dnSai_' + ten.toLowerCase();
+    if (Number(cache.get(key) || 0) >= DN_SAI_TK)
+      return { ok: false, khoa: true, error: 'Tài khoản này nhập sai mật khẩu ' + DN_SAI_TK + ' lần — tạm khóa đăng nhập máy mới ' + DN_KHOA_TK_PHUT + ' phút.' };
+    var rows = tkRead_(tkTab_()), u = null, coTk = false;
+    for (var i = 0; i < rows.length; i++) {
+      var name = String(rows[i].username).replace(/^'/, '').trim();
+      if (name.charAt(0) === '#') continue;
+      coTk = true;
+      if (name.toLowerCase() === ten.toLowerCase()) { u = rows[i]; break; }
+    }
+    if (!coTk) return { ok: false, chuaBat: true, error: 'Google Sheet chung chưa có danh sách tài khoản.' };
+    var v = function (k) { return String(u && u[k] || '').replace(/^'/, '').trim(); };
+    var ok = !!u && v('dang_dung') === '1' && v('muoi') !== '' && dnKiemMk_(mk, v('muoi'), v('mat_khau_bam'));
+    if (!ok) {
+      dnDemSai_(cache, key);
+      if (!u) return { ok: false, chuaCo: true, error: 'Tài khoản "' + ten + '" chưa có trên Google Sheet chung.' };
+      return { ok: false, error: 'Sai tên đăng nhập hoặc mật khẩu (hoặc tài khoản đã bị khóa / tắt trên Sheet).' };
+    }
+    cache.remove(key);
+    return { ok: true, ten: v('username'), maDoc: props.getProperty('TK_MA_DOC'), pcToken: props.getProperty('PC_TOKEN') || '',
+      gh: props.getProperty('KL_GH_TOKEN') || props.getProperty('GITHUB_TOKEN') || '' };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message || err) };
+  }
+}
+
+function dnDemSai_(cache, key) {
+  try {
+    cache.put(key, String(Number(cache.get(key) || 0) + 1), DN_KHOA_TK_PHUT * 60);
+    var n = Number(cache.get('dnSaiChung') || 0) + 1;
+    cache.put('dnSaiChung', String(n), DN_CUA_SO_PHUT * 60);
+    if (n >= DN_SAI_CHUNG) { cache.put('dnKhoaChung', '1', DN_KHOA_CHUNG_PHUT * 60); cache.remove('dnSaiChung'); }
+  } catch (e) { /* bộ đệm lỗi: không chặn */ }
+}
+
+/** Mật khẩu (chữ) khớp muối + mã băm ("h:hex" hoặc base64) theo PBKDF2-HMAC-SHA256 DN_VONG vòng. */
+function dnKiemMk_(mk, muoi, bam) {
+  var salt = dnBytes_(muoi), want = dnBytes_(bam);
+  if (!salt || !want || !want.length) return false;
+  var got = dnPbkdf2_(dnUtf8_(String(mk)), salt, DN_VONG, want.length);
+  var diff = 0;
+  for (var i = 0; i < want.length; i++) diff |= got[i] ^ want[i];
+  return diff === 0;
+}
+
+function dnBytes_(s) {
+  s = String(s || '').trim();
+  try {
+    if (s.indexOf('h:') === 0) {
+      var h = s.slice(2);
+      if (h.length % 2 || /[^0-9a-fA-F]/.test(h)) return null;
+      var out = [];
+      for (var i = 0; i < h.length; i += 2) out.push(parseInt(h.substr(i, 2), 16));
+      return out;
+    }
+    return dnBase64_(s);
+  } catch (e) { return null; }
+}
+
+function dnBase64_(s) {
+  var abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/', out = [], buf = 0, bits = 0;
+  s = s.replace(/=+$/, '');
+  for (var i = 0; i < s.length; i++) {
+    var c = abc.indexOf(s.charAt(i));
+    if (c < 0) return null;
+    buf = (buf << 6) | c; bits += 6;
+    if (bits >= 8) { bits -= 8; out.push((buf >> bits) & 255); }
+  }
+  return out;
+}
+
+function dnUtf8_(s) {
+  var out = [];
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length) {
+      var d = s.charCodeAt(i + 1);
+      if (d >= 0xDC00 && d <= 0xDFFF) { c = 0x10000 + ((c - 0xD800) << 10) + (d - 0xDC00); i++; }
+    }
+    if (c < 0x80) out.push(c);
+    else if (c < 0x800) out.push(0xC0 | (c >> 6), 0x80 | (c & 63));
+    else if (c < 0x10000) out.push(0xE0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+    else out.push(0xF0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+  }
+  return out;
+}
+
+var DN_K_ = [0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+  0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+  0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+  0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];
+var DN_H0_ = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+
+/** Nén 1 khối 64 byte (16 từ w[0..15]) vào trạng thái st (8 từ) — SHA-256. */
+function dnNen_(st, w, W) {
+  var i, a = st[0], b = st[1], c = st[2], d = st[3], e = st[4], f = st[5], g = st[6], h = st[7], t1, t2, x, y;
+  for (i = 0; i < 16; i++) W[i] = w[i] | 0;
+  for (i = 16; i < 64; i++) {
+    x = W[i - 15]; y = W[i - 2];
+    W[i] = (((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3)) + W[i - 16]
+      + (((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10)) + W[i - 7] | 0;
+  }
+  for (i = 0; i < 64; i++) {
+    t1 = h + (((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7))) + ((e & f) ^ (~e & g)) + DN_K_[i] + W[i] | 0;
+    t2 = (((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10))) + ((a & b) ^ (a & c) ^ (b & c)) | 0;
+    h = g; g = f; f = e; e = d + t1 | 0; d = c; c = b; b = a; a = t1 + t2 | 0;
+  }
+  st[0] = st[0] + a | 0; st[1] = st[1] + b | 0; st[2] = st[2] + c | 0; st[3] = st[3] + d | 0;
+  st[4] = st[4] + e | 0; st[5] = st[5] + f | 0; st[6] = st[6] + g | 0; st[7] = st[7] + h | 0;
+}
+
+/** SHA-256 của mảng byte, bắt đầu từ trạng thái st0 (đã nén trước `pre` byte) → 8 từ. */
+function dnSha_(st0, pre, bytes, W) {
+  var st = st0.slice(), len = bytes.length, total = pre + len, msg = bytes.slice();
+  msg.push(0x80);
+  while ((msg.length % 64) !== 56) msg.push(0);
+  var bitsHi = Math.floor(total / 0x20000000), bitsLo = (total * 8) >>> 0;
+  msg.push((bitsHi >>> 24) & 255, (bitsHi >>> 16) & 255, (bitsHi >>> 8) & 255, bitsHi & 255,
+    (bitsLo >>> 24) & 255, (bitsLo >>> 16) & 255, (bitsLo >>> 8) & 255, bitsLo & 255);
+  var w = new Array(16);
+  for (var o = 0; o < msg.length; o += 64) {
+    for (var j = 0; j < 16; j++) w[j] = (msg[o + 4 * j] << 24) | (msg[o + 4 * j + 1] << 16) | (msg[o + 4 * j + 2] << 8) | msg[o + 4 * j + 3];
+    dnNen_(st, w, W);
+  }
+  return st;
+}
+
+function dnWordsToBytes_(ws) {
+  var out = [];
+  for (var i = 0; i < ws.length; i++) out.push((ws[i] >>> 24) & 255, (ws[i] >>> 16) & 255, (ws[i] >>> 8) & 255, ws[i] & 255);
+  return out;
+}
+
+/** PBKDF2-HMAC-SHA256. Trạng thái ipad / opad tính trước; mỗi vòng = 2 lần nén 1 khối (U là 32 byte → khối đệm sẵn). */
+function dnPbkdf2_(pw, salt, vong, dkLen) {
+  var W = new Array(64), key = pw.length > 64 ? dnWordsToBytes_(dnSha_(DN_H0_, 0, pw, W)) : pw.slice();
+  while (key.length < 64) key.push(0);
+  var ip = new Array(16), op = new Array(16), j;
+  for (j = 0; j < 16; j++) {
+    var k = (key[4 * j] << 24) | (key[4 * j + 1] << 16) | (key[4 * j + 2] << 8) | key[4 * j + 3];
+    ip[j] = k ^ 0x36363636; op[j] = k ^ 0x5c5c5c5c;
+  }
+  var stI = DN_H0_.slice(), stO = DN_H0_.slice();
+  dnNen_(stI, ip, W); dnNen_(stO, op, W);
+  var out = [], blocks = Math.ceil(dkLen / 32);
+  // Khối 32 byte + đệm SHA-256 với độ dài 64 + 32 = 96 byte = 768 bit.
+  var blk = new Array(16);
+  for (var b = 1; b <= blocks; b++) {
+    var s1 = salt.concat([(b >>> 24) & 255, (b >>> 16) & 255, (b >>> 8) & 255, b & 255]);
+    var u = dnSha_(stO, 64, dnWordsToBytes_(dnSha_(stI, 64, s1, W)), W), t = u.slice();
+    for (var r = 1; r < vong; r++) {
+      for (j = 0; j < 8; j++) blk[j] = u[j];
+      blk[8] = 0x80000000; for (j = 9; j < 15; j++) blk[j] = 0; blk[15] = 768;
+      var st = stI.slice(); dnNen_(st, blk, W);
+      for (j = 0; j < 8; j++) blk[j] = st[j];
+      u = stO.slice(); dnNen_(u, blk, W);
+      for (j = 0; j < 8; j++) t[j] ^= u[j];
+    }
+    out = out.concat(dnWordsToBytes_(t));
+  }
+  return out.slice(0, dkLen);
 }

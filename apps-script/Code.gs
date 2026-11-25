@@ -26,6 +26,11 @@
  *     của mình ở Cài đặt (lệnh doiMa). Tab PhanQuyen giờ có thêm cột "maTruyCap"
  *     (mã dạng chữ, để xem lại được trên điện thoại + app PC) — CHỈ dùng nội bộ.
  *
+ *   - TÀI KHOẢN DÙNG CHUNG của app PC C# (PC 1.104, 25/11/2026): trước là 1 Google Sheet + 1 Apps Script RIÊNG (TaiKhoan.gs),
+ *     nay gộp vào đây — tab "TaiKhoan", lệnh list / save / replaceAll (xem phần "TÀI KHOẢN DÙNG CHUNG" cuối file). Hai mã của phần này
+ *     (TK_MA_DOC / TK_MA_QUAN_TRI) nằm ở Thuộc tính tập lệnh, do app PC tự đặt (lệnh pc.tkCaiMa) — file này giống nhau cho mọi người,
+ *     KHÔNG phải điền mã gì vào file. Điện thoại không dùng phần này.
+ *
  * Quy ước dữ liệu PHẢI khớp với app PC (main.js + sheets-webapp-client.js):
  *   - Tab TonKho_M02 / TonKho_M01 / TonKho_M01_ViTri / TonKho_M01_ViTriBot / Meta: PC ghi đè, file này chỉ ĐỌC.
  *   - Tab PhieuXuat_PC / PhieuXuatItems_PC (PC 4.58): phiếu xuất do chính PC tạo — PC ghi đè, file này chỉ ĐỌC (getPhieuPc_) để điện thoại XEM.
@@ -170,6 +175,8 @@ function doPost(e) {
   var appToken = props.getProperty('APP_TOKEN');
   var pcToken = props.getProperty('PC_TOKEN');
   var action = String(req.action || '');
+  // PC 1.104 — tài khoản dùng chung của app PC (gộp từ TaiKhoan.gs): lệnh riêng, mã riêng (TK_MA_DOC / TK_MA_QUAN_TRI).
+  if (TK_ACTIONS_.indexOf(action) >= 0) return tkPost_(req, props);
   // ĐT 2.1 — ĐĂNG NHẬP BẰNG GOOGLE (bản web): điện thoại gửi id_token của Google (Google Identity Services) → Web App hỏi Google
   // xác minh, tra Gmail trong tab PhanQuyen (cột email) → trả tên + mã truy cập của tài khoản đó; sau đó app gọi như đăng nhập thường.
   if (action === 'dangNhapGoogle') {
@@ -271,6 +278,8 @@ function doPost(e) {
       // PC 3.21 — cấu hình NGUỒN cập nhật (kho + nhánh + mã) dùng chung: GITHUB_REPO / GITHUB_BRANCH / GITHUB_TOKEN. Máy nào cũng hỏi mỗi lần kiểm tra cập nhật → đổi kho chỉ cần sửa ở đây.
       case 'pc.ghSourceGet': return json_(pcGhSourceGet_());
       case 'pc.ghSourceSet': return json_(pcGhSourceSet_(req));
+      // PC 1.104 — đặt 2 mã của tài khoản dùng chung (tab TaiKhoan) vào Thuộc tính tập lệnh.
+      case 'pc.tkCaiMa': return json_(tkCaiMa_(props, req.maDoc, req.maQuanTri));
       default: return json_({ ok: false, error: 'Không có chức năng "' + action + '".' });
     }
   } catch (err) {
@@ -1648,4 +1657,112 @@ function ksSince_(since) {
     xd.forEach(function (r) { var u = String(r[1] || ''); if (u > since) { dels.push(String(r[0] || '')); if (u > maxU) maxU = u; } });
   }
   return { ok: true, full: !since, rows: rows, dels: dels, total: data.filter(function (r) { return String(r[0] || ''); }).length, u: maxU };
+}
+
+// ============================================================================================
+// TÀI KHOẢN DÙNG CHUNG CỦA APP PC C# (PC 1.104 — gộp từ TaiKhoan.gs, trước là Sheet + Apps Script riêng)
+// Tab "TaiKhoan": mỗi dòng 1 tài khoản PC; mật khẩu chỉ có mã băm PBKDF2-SHA256 + muối (app PC tạo), không có chữ.
+// Dòng tên bắt đầu bằng "#" (vd "#khoa-quan-tri", "#mang-lan") là dòng hệ thống của app PC — đừng sửa tay.
+//   - list       : cần token = TK_MA_DOC                    → { ok, users: [...] }
+//   - save       : thêm adminKey = TK_MA_QUAN_TRI, user      → thêm / sửa theo username (không phân biệt hoa thường)
+//   - replaceAll : thêm adminKey = TK_MA_QUAN_TRI, users[]   → thay cả danh sách
+//   - pc.tkCaiMa : (PC_TOKEN) đặt TK_MA_DOC / TK_MA_QUAN_TRI. Chưa có mã → đặt; đã có → chỉ nhận khi gửi ĐÚNG 2 mã đang dùng
+//                  (máy khác đã chuyển trước thì máy sau phải dán mã kết nối KLTK1-… của máy đó, không ghi đè được).
+// Trả lời KHÔNG có code "AUTH" (app PC dùng code AUTH để nhận ra "đường dẫn trỏ nhầm Web App điện thoại").
+// ============================================================================================
+var TK_ACTIONS_ = ['list', 'save', 'replaceAll'];
+var TK_TAB_ = 'TaiKhoan';
+var TK_COT_ = ['username', 'ho_ten', 'vai_tro', 'dang_dung', 'quyen', 'mat_khau_bam', 'muoi', 'cap_nhat_luc', 'cap_nhat_boi', 'email_google'];
+var TK_MA_OK_ = /^[A-Za-z0-9]{16,128}$/;
+
+function tkPost_(req, props) {
+  try {
+    var maDoc = props.getProperty('TK_MA_DOC') || '', maQt = props.getProperty('TK_MA_QUAN_TRI') || '';
+    if (!maDoc) return json_({ ok: false, error: 'Google Sheet này chưa bật tài khoản dùng chung. Ở máy Quản trị: Cài đặt máy › Tài khoản dùng chung › "Dùng chung Sheet điện thoại".' });
+    if (String(req.token || '') !== maDoc) return json_({ ok: false, error: 'Sai mã kết nối.' });
+    var sh = tkTab_();
+    if (req.action === 'list') return json_({ ok: true, users: tkRead_(sh) });
+    if (!maQt || String(req.adminKey || '') !== maQt)
+      return json_({ ok: false, error: 'Máy này không có mã quản trị nên không được sửa tài khoản.' });
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      if (req.action === 'save') { tkSave_(sh, req.user || {}); return json_({ ok: true }); }
+      if (req.action === 'replaceAll') {
+        var list = req.users || [];
+        if (!list.length) return json_({ ok: false, error: 'Danh sách trống.' });
+        if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, TK_COT_.length).clearContent();
+        for (var i = 0; i < list.length; i++) tkSave_(sh, list[i]);
+        return json_({ ok: true });
+      }
+    } finally {
+      lock.releaseLock();
+    }
+    return json_({ ok: false, error: 'Không có chức năng ' + req.action });
+  } catch (err) {
+    return json_({ ok: false, error: String(err && err.message || err) });
+  }
+}
+
+function tkCaiMa_(props, maDoc, maQt) {
+  maDoc = String(maDoc || ''); maQt = String(maQt || '');
+  if (!TK_MA_OK_.test(maDoc) || !TK_MA_OK_.test(maQt)) return { ok: false, error: 'Mã tài khoản không hợp lệ.' };
+  var curDoc = props.getProperty('TK_MA_DOC') || '', curQt = props.getProperty('TK_MA_QUAN_TRI') || '';
+  if (curDoc && (curDoc !== maDoc || curQt !== maQt))
+    return { ok: false, daCoMaKhac: true, error: 'Google Sheet này đã bật tài khoản dùng chung từ một máy khác. Ở máy đó chọn "Chép mã máy quản trị" rồi dán mã KLTK1-… vào máy này.' };
+  props.setProperties({ TK_MA_DOC: maDoc, TK_MA_QUAN_TRI: maQt });
+  tkTab_();
+  return { ok: true, daCo: !!curDoc };
+}
+
+function tkTab_() {
+  var ss = ss_();
+  var sh = ss.getSheetByName(TK_TAB_);
+  if (!sh) {
+    sh = ss.insertSheet(TK_TAB_);
+    sh.getRange(1, 1, 1, TK_COT_.length).setValues([TK_COT_]).setFontWeight('bold');
+    sh.getRange(1, 1, 1000, TK_COT_.length).setNumberFormat('@');
+    sh.setFrozenRows(1);
+  } else if (sh.getLastColumn() < TK_COT_.length) {
+    sh.getRange(1, 1, 1, TK_COT_.length).setValues([TK_COT_]).setFontWeight('bold');
+    sh.getRange(1, 1, 1000, TK_COT_.length).setNumberFormat('@');
+  }
+  return sh;
+}
+
+function tkRead_(sh) {
+  var n = sh.getLastRow();
+  if (n < 2) return [];
+  var head = sh.getRange(1, 1, 1, TK_COT_.length).getValues()[0].map(String);
+  var rows = sh.getRange(2, 1, n - 1, TK_COT_.length).getValues();
+  var res = [];
+  for (var i = 0; i < rows.length; i++) {
+    var o = {};
+    for (var j = 0; j < head.length; j++) o[head[j]] = rows[i][j] === null ? '' : String(rows[i][j]);
+    if (o.username) res.push(o);
+  }
+  return res;
+}
+
+function tkSave_(sh, u) {
+  var name = String(u.username || '').trim();
+  if (!name) throw new Error('Thiếu tên đăng nhập.');
+  var row = TK_COT_.map(function (c) { return tkSafe_(u[c]); });
+  var n = sh.getLastRow();
+  var at = -1;
+  if (n >= 2) {
+    var names = sh.getRange(2, 1, n - 1, 1).getValues();
+    for (var i = 0; i < names.length; i++)
+      if (String(names[i][0]).replace(/^'/, '').toLowerCase() === name.toLowerCase()) { at = i + 2; break; }
+  }
+  if (at < 0) at = Math.max(n, 1) + 1;
+  var r = sh.getRange(at, 1, 1, TK_COT_.length);
+  r.setNumberFormat('@');
+  r.setValues([row]);
+}
+
+// Chữ bắt đầu bằng = + - @ bị Google Sheet hiểu là công thức → thêm dấu ' để giữ nguyên là chữ.
+function tkSafe_(v) {
+  var s = v === undefined || v === null ? '' : String(v);
+  return /^[=+\-@]/.test(s) ? "'" + s : s;
 }

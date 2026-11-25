@@ -149,7 +149,8 @@ var M2 = { maHang: 'Mã hàng', tenHang: 'Tên hàng', soLo: 'Số lô', size: '
 
 function doGet(e) {
   var q = (e && e.parameter) || {};
-  return json_({ ok: true, app: 'Kho Lạnh An An', message: 'Web App đang chạy. Ứng dụng điện thoại gọi bằng POST.' });
+  // PC 1.110: mở đường dẫn /exec bằng trình duyệt để biết Google đang chạy bản Code.gs nào (dán xong mà vẫn bản cũ = chưa Triển khai › Phiên bản mới).
+  return json_({ ok: true, app: 'Kho Lạnh An An', banCodeGs: 'PC-1.110', dangNhapMayMoi: true, message: 'Web App đang chạy. Ứng dụng điện thoại gọi bằng POST.' });
 }
 
 // PC 1.65 — CHẶN DÒ MÃ PC_TOKEN: link Web App công khai (GitHub Pages) nên ai cũng gửi thử mã được. Sai quá PC_FAIL_MAX lần trong

@@ -1672,8 +1672,7 @@ function ksSince_(since) {
 //   - list       : cần token = TK_MA_DOC                    → { ok, users: [...] }
 //   - save       : thêm adminKey = TK_MA_QUAN_TRI, user      → thêm / sửa theo username (không phân biệt hoa thường)
 //   - replaceAll : thêm adminKey = TK_MA_QUAN_TRI, users[]   → thay cả danh sách
-//   - pc.tkCaiMa : (PC_TOKEN) đặt TK_MA_DOC / TK_MA_QUAN_TRI. Chưa có mã → đặt; đã có → chỉ nhận khi gửi ĐÚNG 2 mã đang dùng
-//                  (máy khác đã chuyển trước thì máy sau phải dán mã kết nối KLTK1-… của máy đó, không ghi đè được).
+//   - pc.tkCaiMa : (PC_TOKEN) đặt TK_MA_DOC / TK_MA_QUAN_TRI (PC 1.110: ghi đè cả khi máy khác đã đặt — app dùng cho đội nhóm).
 // Trả lời KHÔNG có code "AUTH" (app PC dùng code AUTH để nhận ra "đường dẫn trỏ nhầm Web App điện thoại").
 // ============================================================================================
 var TK_ACTIONS_ = ['list', 'save', 'replaceAll'];
@@ -1714,8 +1713,8 @@ function tkCaiMa_(props, maDoc, maQt) {
   maDoc = String(maDoc || ''); maQt = String(maQt || '');
   if (!TK_MA_OK_.test(maDoc) || !TK_MA_OK_.test(maQt)) return { ok: false, error: 'Mã tài khoản không hợp lệ.' };
   var curDoc = props.getProperty('TK_MA_DOC') || '', curQt = props.getProperty('TK_MA_QUAN_TRI') || '';
-  if (curDoc && (curDoc !== maDoc || curQt !== maQt))
-    return { ok: false, daCoMaKhac: true, error: 'Google Sheet này đã bật tài khoản dùng chung từ một máy khác. Ở máy đó chọn "Chép mã máy quản trị" rồi dán mã KLTK1-… vào máy này.' };
+  // PC 1.110 (người dùng: "app dùng cho đội nhóm, bỏ bảo mật cao khiến kết nối phức tạp"): máy PC có PC_TOKEN đặt mã là được, kể cả khi máy khác
+  // đã đặt trước — không còn chặn "đã bật từ một máy khác". Máy giữ mã cũ đăng nhập lại là tự nối (pcDangNhap).
   props.setProperties({ TK_MA_DOC: maDoc, TK_MA_QUAN_TRI: maQt });
   tkTab_();
   return { ok: true, daCo: !!curDoc };

@@ -1684,11 +1684,13 @@ function tkPost_(req, props) {
   try {
     var maDoc = props.getProperty('TK_MA_DOC') || '', maQt = props.getProperty('TK_MA_QUAN_TRI') || '';
     if (!maDoc) return json_({ ok: false, error: 'Google Sheet này chưa bật tài khoản dùng chung. Ở máy Quản trị: Cài đặt máy › Tài khoản dùng chung › "Dùng chung Sheet điện thoại".' });
-    if (String(req.token || '') !== maDoc) return json_({ ok: false, error: 'Sai mã kết nối.' });
+    // PC 1.110: nhận mã đọc HOẶC PC_TOKEN (mọi máy PC đã nối đều có, không đổi khi đặt lại mã) → máy giữ mã cũ không bị "Sai mã kết nối".
+    var pcTok = props.getProperty('PC_TOKEN') || '';
+    if (String(req.token || '') !== maDoc && !(pcTok && String(req.pcToken || '') === pcTok)) return json_({ ok: false, error: 'Sai mã kết nối.' });
     var sh = tkTab_();
     if (req.action === 'list') return json_({ ok: true, users: tkRead_(sh) });
-    if (!maQt || String(req.adminKey || '') !== maQt)
-      return json_({ ok: false, error: 'Máy này không có mã quản trị nên không được sửa tài khoản.' });
+    // PC 1.110 (người dùng: "phân quyền theo tài khoản, không theo máy"): ghi chỉ cần mã đọc — app PC chỉ cho tài khoản vai trò Quản trị sửa,
+    // đăng nhập ở máy nào cũng được. adminKey (máy cũ còn giữ) gửi kèm thì bỏ qua.
     var lock = LockService.getScriptLock();
     lock.waitLock(20000);
     try {

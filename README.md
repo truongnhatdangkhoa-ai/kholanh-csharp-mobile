@@ -14,6 +14,12 @@
 > `www/app-config.js` đã có sẵn link Web App của Sheet MỚI → người dùng chỉ nhập tài khoản + mật khẩu.
 > **Không** dán link Sheet cũ vào app PC C# khi app PC cũ còn chạy (2 app PC cùng ghi 1 Sheet sẽ đè số liệu của nhau).
 
+### Tài khoản dùng chung của app PC trong cùng Sheet (25/11/2026, app PC 1.104)
+- `Code.gs` có thêm phần **tài khoản dùng chung của app PC C#** (trước là Google Sheet + Apps Script `TaiKhoan.gs` riêng): tab `TaiKhoan`, lệnh `list` / `save` / `replaceAll`. Nay chỉ còn **1 Sheet + 1 Apps Script** cho cả điện thoại lẫn tài khoản PC.
+- Hai mã của phần này (`TK_MA_DOC` / `TK_MA_QUAN_TRI`) nằm ở **Thuộc tính tập lệnh**, app PC tự đặt (lệnh `pc.tkCaiMa`, cần PC_TOKEN) — file `Code.gs` giống nhau cho mọi người, không phải điền gì. Điện thoại không dùng phần này.
+- Cách bật: dán `Code.gs` mới → Lưu → **Triển khai › Quản lý triển khai › ✏ › Phiên bản mới › Triển khai** (giữ nguyên đường dẫn) → app PC máy Quản trị: **Cài đặt máy › Tài khoản dùng chung › Dùng chung Sheet điện thoại**. Các máy PC khác tự chuyển theo.
+- **Không** dán `TaiKhoan.gs` (mã tài khoản cũ của app PC) vào Sheet này — sẽ thay mất phần điện thoại.
+
 ### Đăng nhập bằng Google (2.1)
 - **Bản web** (mở `https://truongnhatdangkhoa-ai.github.io/kholanh-csharp-mobile/` trên Chrome — có thể "Thêm vào màn hình chính"): màn hình Kết nối có nút **Đăng nhập bằng Google** — hiện sẵn tài khoản Google đang đăng nhập trên trình duyệt, chạm 1 lần là vào.
 - Quản trị gán Gmail cho từng người: **Cài đặt › Quản lý người dùng** › ô **Email Google** (cột `email` của tab PhanQuyen).

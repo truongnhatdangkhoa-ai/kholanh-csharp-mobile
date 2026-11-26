@@ -1,6 +1,6 @@
 {
   "appId": "vn.anan.kholanh.moi",
-  "appName": "Kho Lạnh (mới)",
+  "appName": "Kho Lạnh",
   "webDir": "www",
   "server": {
     "androidScheme": "https",

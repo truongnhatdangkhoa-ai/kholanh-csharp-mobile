@@ -25,7 +25,7 @@
   // Tăng mỗi lần sửa app.js — hiện ở cuối Cài đặt để kiểm tra điện thoại đang chạy đúng bản chưa.
   // ĐÁNH SỐ LẠI TỪ 1.1 (30/09/2026, trước đó 3.x) — tăng mỗi lần phát hành; nhớ đổi cả ?v= trong index.html
   // và "version" trong package.json (GitHub Actions lấy số đó làm versionName của APK).
-  const APP_VERSION = '2.1 (24/11/2026) · bản mới';
+  const APP_VERSION = '2.2 (26/11/2026) · bản mới';
   const PAGE = 50;
 
   // Tên cột — PHẢI khớp tab TonKho_M02 (M2_PUSH_COLUMNS trong main.js của app PC).
@@ -3405,43 +3405,7 @@
 
   const fontPct = () => (window.KLFontScale ? window.KLFontScale.get() : 100);
 
-  // ĐT 2.1 — ĐĂNG NHẬP BẰNG GOOGLE (chỉ bản web mở trên trình duyệt, trang GitHub Pages): nút của Google Identity Services hiện sẵn
-  // tài khoản Google đang đăng nhập trên trình duyệt → id_token → Web App (lệnh dangNhapGoogle) xác minh, tra Gmail trong PhanQuyen →
-  // trả tên + mã truy cập → điền vào 2 ô rồi "Lưu và kiểm tra" như thường. App APK (khung web trong app) Google không cho → không hiện.
-  const GOOGLE_WEB_CLIENT_ID = '688518280070-vicnen62bp64u8a464ou7ijv3s8ukoej.apps.googleusercontent.com';
-  const GOOGLE_WEB_OK = location.protocol === 'https:' && /(^|\.)github\.io$/.test(location.hostname) && !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
-  let gsiLoading = null;
-  function loadGsi() {
-    if (window.google && window.google.accounts && window.google.accounts.id) return Promise.resolve();
-    if (!gsiLoading) gsiLoading = new Promise((ok, bad) => {
-      const s = document.createElement('script');
-      s.src = 'https://accounts.google.com/gsi/client'; s.async = true;
-      s.onload = () => ok(); s.onerror = () => { gsiLoading = null; bad(new Error('Không tải được nút Google (kiểm tra mạng).')); };
-      document.head.appendChild(s);
-    });
-    return gsiLoading;
-  }
-  async function mountGoogleButton() {
-    const host = $('gsiBtn'); if (!host) return;
-    try {
-      await loadGsi();
-      window.google.accounts.id.initialize({ client_id: GOOGLE_WEB_CLIENT_ID, callback: onGoogleCredential, auto_select: false, ux_mode: 'popup', context: 'signin' });
-      window.google.accounts.id.renderButton(host, { theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill', locale: 'vi', width: Math.min(360, host.clientWidth || 320) });
-    } catch (err) { host.textContent = err.message; }
-  }
-  async function onGoogleCredential(resp) {
-    const msg = $('cfgMsg'), url = FIXED_URL || ($('cfgUrl') ? $('cfgUrl').value.trim() : state.cfg.url);
-    const show = (cls, t) => { if (msg) { msg.className = 'notice ' + cls; msg.textContent = t; msg.hidden = false; } };
-    show('', 'Đang kiểm tra tài khoản Google…');
-    try {
-      const res = await fetch(url, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'dangNhapGoogle', idToken: resp.credential }) });
-      let d; try { d = JSON.parse(await res.text()); } catch (e) { throw new Error('Web App trả về trang lạ.'); }
-      if (!d.ok) throw new Error(/^Không có chức năng|Mã truy cập/.test(d.error || '') ? 'Web App chưa cập nhật bản có Đăng nhập Google (dán lại apps-script/Code.gs, Triển khai › Phiên bản mới).' : (d.error || 'Không đăng nhập được.'));
-      $('cfgUser').value = d.ten; $('cfgToken').value = d.token;
-      show('ok', 'Google: ' + d.email + ' → ' + (d.hienThi || d.ten) + '. Đang kết nối…');
-      $('cfgSave').click();
-    } catch (err) { show('err', 'Đăng nhập Google: ' + err.message); }
-  }
+  // ĐT 2.2 (26/11/2026): bỏ "Đăng nhập bằng Google" (người dùng yêu cầu) — chỉ còn tài khoản + mật khẩu.
 
   function openSettings(first) {
     const c = state.cfg;
@@ -3460,7 +3424,6 @@
       ${state.me && !state.me.admin ? `<div class="me-card">${badgeImg(state.me.vaiTro || state.me.quyen, false)}<b class="role-${esc(state.me.vaiTro || state.me.quyen)}">${esc(state.me.hienThi || state.me.ten)}</b> · <span class="role-${esc(state.me.vaiTro || state.me.quyen)}">${esc(ROLE_SHORT[state.me.vaiTro || state.me.quyen] || QUYEN_TEXT[state.me.quyen] || state.me.quyen)}</span></div>` : ''}
       <div class="notice" id="cfgMsg" hidden></div>
       <button type="button" class="btn btn-primary" id="cfgSave">Lưu và kiểm tra</button>
-      ${GOOGLE_WEB_OK ? `<div class="gsi-sep"><span>hoặc</span></div><div id="gsiBtn" class="gsi-btn"></div>` : ''}
       ${first || !state.me || state.me.admin ? '' : `<button type="button" class="btn btn-ghost" id="cfgPw">🔑 Đổi mật khẩu</button>`}
       ${first || !canManage() ? '' : `<button type="button" class="btn btn-ghost" id="cfgUsers">👥 Quản lý người dùng &amp; phân quyền</button>`}
       ${first ? '' : `<button type="button" class="btn btn-ghost" data-close>Đóng</button>
@@ -3493,7 +3456,6 @@
         fr.addEventListener('click', () => { rg.value = 100; fv.textContent = window.KLFontScale.set(100, true) + '%'; });
       }
     }
-    if (GOOGLE_WEB_OK) mountGoogleButton();
     $('sheetBody').onclick = async (e) => {
       if (e.target.closest('[data-close]')) { closeSheet(); return; }
       if (e.target.closest('#luCheck')) {
@@ -3659,7 +3621,7 @@
         <label class="field"><span>Tên người dùng (ID đăng nhập)</span><input type="text" id="uaTen" maxlength="40" value="${esc(d.ten)}" ${isNew ? '' : 'readonly'} autocapitalize="none" spellcheck="false" placeholder="VD: thang"><small>Chữ không dấu, số, . _ - — không đổi được sau khi tạo.</small></label>
         <label class="field"><span>Mã truy cập (như mật khẩu)</span><input type="text" id="uaToken" maxlength="64" value="${esc(d.token)}" autocapitalize="none" spellcheck="false" placeholder="Bấm Tạo mã"><small>Đổi mã thì người này phải nhập mã mới trên điện thoại.</small></label>
         <div class="ua-row"><button type="button" class="btn btn-ghost" data-gen>Tạo mã mới</button><button type="button" class="btn btn-ghost" data-copy>Copy mã</button></div>
-        <label class="field"><span>Email Google (tùy chọn)</span><input type="email" id="uaEmail" maxlength="120" value="${esc(d.email || '')}" autocapitalize="none" spellcheck="false" placeholder="ten@gmail.com"><small>Gán Gmail thì người này bấm “Đăng nhập bằng Google” là vào, không phải gõ mã.</small></label>
+        <label class="field"><span>Email Google (tùy chọn)</span><input type="email" id="uaEmail" maxlength="120" value="${esc(d.email || '')}" autocapitalize="none" spellcheck="false" placeholder="ten@gmail.com"><small>Chỉ để ghi nhớ, không dùng để đăng nhập.</small></label>
         <label class="field"><span>Vai trò</span><select id="uaQuyen" class="ua-select"${self ? ' disabled' : ''}>${roles.map((k) => `<option value="${k}"${d.quyen === k ? ' selected' : ''}>${esc(PQ_ROLE_OPT[k])}</option>`).join('')}</select><small id="uaHint"></small></label>
         <div class="field"><span>Kho điện thoại — được xem / dùng</span><div class="ua-kho">${PQ_KHO.map(([k, l]) => `<label><input type="checkbox" data-kho="${k}"${d.kho.includes(k) ? ' checked' : ''}> ${esc(l)}</label>`).join('')}</div></div>
         <div class="field"><span>Quyền trên PC — module được mở</span>

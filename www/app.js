@@ -25,7 +25,7 @@
   // Tăng mỗi lần sửa app.js — hiện ở cuối Cài đặt để kiểm tra điện thoại đang chạy đúng bản chưa.
   // ĐÁNH SỐ LẠI TỪ 1.1 (30/09/2026, trước đó 3.x) — tăng mỗi lần phát hành; nhớ đổi cả ?v= trong index.html
   // và "version" trong package.json (GitHub Actions lấy số đó làm versionName của APK).
-  const APP_VERSION = '2.3 (27/11/2026)';
+  const APP_VERSION = '2.4 (27/11/2026)';
   const PAGE = 50;
 
   // Tên cột — PHẢI khớp tab TonKho_M02 (M2_PUSH_COLUMNS trong main.js của app PC).
@@ -1788,17 +1788,23 @@
   const ksLan2List = (r) => (r && r.lan2All && r.lan2All.length ? r.lan2All : (r && r.lan2 ? [r.lan2] : []));
   // Bản 2.1: nhận diện MẪU CHỜ rộng hơn. Từ khóa: MKS / MCS / MKSC / MCKS / MCSKS / MC + số (MKS2, MCS3, MKSC2, MC2, "MKS chờ 2",
   // "MKS 2", "mẫu chờ 3", "mks-2"…). Số = SỐ MẪU chờ (2, 3, 4, 5…). Gõ \"mẫu chờ\" / \"MKS chờ\" không kèm số = mọi mẫu chờ.
-  const KS_MK_WORD = '(?:mcsks|mcks|mkscho|mksc|mcs|mks|mc)';
+  // Bản 2.4 (đồng bộ PC 1.162): + MCKSS; "MAU" / "M" (= mẫu) CHỈ tính khi đi kèm SỐ (M2, MAU2, M 2) — "M" trơn không phải mẫu
+  // (lần 1 tên lô là L2, không có M2). Gõ đủ chữ "mẫu kháng sinh chờ 2" / "maukhangsinhcho2" cũng được (ksMauNorm).
+  const KS_MK_WORD = '(?:mcsks|mckss|mcks|mkscho|mksc|mcs|mks|mc)';
+  const KS_MK_NUMWORD = '(?:mcsks|mckss|mcks|mkscho|mksc|mcs|mks|mc|mau|m)';
   const KS_MK_ONLY = new RegExp('^' + KS_MK_WORD + '$');
-  const KS_MK_NUM = new RegExp('^' + KS_MK_WORD + '[.\\-_:#]*(\\d+)$');
+  const KS_MK_NUM = new RegExp('^' + KS_MK_NUMWORD + '[.\\-_:#]*(\\d+)$');
+  const ksMauNorm = (t) => String(t || '')
+    .replace(/(?<![a-z0-9])(?:mau|m)\s*(?:khang\s*sinh|ks)\s*(cho)?(?![a-z])/g, (m, c) => (c ? 'mks cho ' : 'mks '))
+    .replace(/(?<![a-z0-9])mau\s*cho(?![a-z])/g, 'mks cho ');
   // Đọc tên mẫu: trả { cho: true/false, no: số mẫu | null }. Mẫu chờ = tên có \"MKS chờ\", \"mẫu chờ\", \"MC 2\", \"MCS3\"… ở ĐẦU tên
   // hoặc có chữ \"chờ\" đi kèm MKS/MCS/MC. Không lấy số ở phần \"ngày 26.09 · LSX 073/09\" phía sau.
   function ksMauInfo(name) {
-    const t = norm(name || '').replace(/\s+/g, ' ').trim();
+    const t = ksMauNorm(norm(name || '')).replace(/\s+/g, ' ').trim();
     if (!t) return { cho: false, no: null };
     let m = t.match(new RegExp('(?:^|[\\s(\\[])(?:' + KS_MK_WORD.slice(3, -1) + '|mau)\\s*cho\\s*(?:so|mau|no|#)?\\s*[.\\-:]?\\s*(\\d+)'));
     if (m) return { cho: true, no: +m[1] };
-    m = t.match(new RegExp('^' + KS_MK_WORD + '\\s*[.\\-_:#]?\\s*(?:so|mau|no)?\\s*[.\\-_:#]?\\s*(\\d+)(?!\\d|[./\\-]\\d)'));
+    m = t.match(new RegExp('^' + KS_MK_NUMWORD + '\\s*[.\\-_:#]?\\s*(?:so|mau|no)?\\s*[.\\-_:#]?\\s*(\\d+)(?!\\d|[./\\-]\\d)'));
     if (m) return { cho: true, no: +m[1] };
     m = t.match(new RegExp('(?:^|[\\s(\\[])(?:' + KS_MK_WORD.slice(3, -1) + '|mau)\\s*cho(?![a-z])'));
     if (m) return { cho: true, no: null };
@@ -1816,7 +1822,7 @@
     return n === no;
   }
   function ksHistMatcher(q) {
-    const toks = norm(q).trim().split(/\s+/).filter(Boolean);
+    const toks = ksMauNorm(norm(q)).trim().split(/\s+/).filter(Boolean);
     const conds = [], dates = [];
     let mks = null, mksAny = false, lotGiven = false;
     for (let i = 0; i < toks.length; i++) {
@@ -1824,7 +1830,7 @@
       let mm = t.match(KS_MK_NUM);
       if (mm) { mks = +mm[1]; continue; }
       // \"mks 2\" / \"mks cho 2\" / \"mks cho so 2\" / \"mau cho 3\" / \"mks cho\" (không số = mọi mẫu chờ)
-      const isMk = KS_MK_ONLY.test(t), isMau = t === 'mau' && toks[i + 1] === 'cho';
+      const isMk = KS_MK_ONLY.test(t) || ((t === 'm' || t === 'mau') && /^\d+$/.test(toks[i + 1] || '')), isMau = t === 'mau' && toks[i + 1] === 'cho';
       if (isMk || isMau) {
         let j = i + 1, sawCho = isMau;
         if (isMau) j = i + 2; else if (toks[j] === 'cho') { sawCho = true; j++; }

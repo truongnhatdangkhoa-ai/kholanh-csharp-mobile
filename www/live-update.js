@@ -47,7 +47,26 @@
     const nativeLevel = Number(lsGet(LS_NATIVE)) || Number(v.nativeLevel) || 1;
     state.local = { version: String(v.version || ''), date: v.date || '', message: v.message || '', nativeLevel, builtin, path,
       base: String(cfg.base || '').replace(/\/?$/, '/') };
+    // ĐT 2.3: nhiều địa chỉ dự phòng — GitHub chuyển github.io sang tên miền riêng (app.kcenter.xyz) nên 1 địa chỉ lỗi (chuyển tiếp / chứng chỉ) thì thử địa chỉ kia.
+    const alt = [].concat(cfg.bases || [], state.local.base ? [state.local.base] : [], ['https://app.kcenter.xyz/']);
+    state.local.bases = alt.map((b) => String(b || '').replace(/\/?$/, '/')).filter((b, i, a) => b !== '/' && a.indexOf(b) === i);
     return state.local;
+  }
+  // Lỗi mạng của trình duyệt ("Failed to fetch", "Load failed") → câu dễ hiểu.
+  function friendly(e) {
+    const m = String(e && e.message ? e.message : e);
+    if (/failed to fetch|load failed|networkerror|network request/i.test(m))
+      return 'không kết nối được máy chủ cập nhật (kiểm tra mạng 4G / Wi-Fi). Nếu mạng tốt mà vẫn lỗi: cài lại file APK mới nhất.';
+    if (/^HTTP 404/.test(m)) return 'máy chủ cập nhật chưa có bản mới (' + m + ').';
+    return m;
+  }
+  // Hỏi update.json lần lượt ở từng địa chỉ; địa chỉ nào trả lời thì dùng nó để tải file.
+  async function fetchUpdate(L) {
+    let lastErr = null;
+    for (const b of L.bases) {
+      try { const R = await readJson(b + 'update.json', true); L.base = b; return R; } catch (e) { lastErr = e; }
+    }
+    throw lastErr || new Error('Failed to fetch');
   }
 
   // ---------- thanh báo ----------
@@ -157,9 +176,9 @@
     state.checking = true;
     try {
       const L = await localInfo();
-      if (!L.base || L.base === '/') return { ok: false, msg: 'APK này chưa có địa chỉ cập nhật — cần cài APK build từ GitHub bản mới.' };
+      if (!L.bases.length) return { ok: false, msg: 'APK này chưa có địa chỉ cập nhật — cần cài APK build từ GitHub bản mới.' };
       if (!navigator.onLine) return { ok: false, msg: 'Không có mạng.' };
-      const R = await readJson(L.base + 'update.json', true);
+      const R = await fetchUpdate(L);
       if (!R || !R.version || !Array.isArray(R.files) || !R.files.length) return { ok: false, msg: 'Chưa có bản cập nhật trên GitHub Pages.' };
       if (R.version === L.version) { hideBanner(); return { ok: true, latest: true, msg: 'Đang dùng bản mới nhất (' + L.version + ').' }; }
       if (!manual && lsGet(LS_BAD) === R.version) return null;
@@ -195,7 +214,7 @@
       return { ok: true, downloaded: true, msg: 'Đã tải bản mới ' + R.version + '.' };
     } catch (e) {
       if (manual) hideBanner();
-      return { ok: false, msg: 'Chưa kiểm tra được cập nhật: ' + (e && e.message ? e.message : e) };
+      return { ok: false, msg: 'Chưa kiểm tra được cập nhật: ' + friendly(e) };
     } finally { state.checking = false; }
   }
 

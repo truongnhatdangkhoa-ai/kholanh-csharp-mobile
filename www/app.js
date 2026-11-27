@@ -25,7 +25,7 @@
   // Tăng mỗi lần sửa app.js — hiện ở cuối Cài đặt để kiểm tra điện thoại đang chạy đúng bản chưa.
   // ĐÁNH SỐ LẠI TỪ 1.1 (30/09/2026, trước đó 3.x) — tăng mỗi lần phát hành; nhớ đổi cả ?v= trong index.html
   // và "version" trong package.json (GitHub Actions lấy số đó làm versionName của APK).
-  const APP_VERSION = '2.4 (27/11/2026)';
+  const APP_VERSION = '2.5 (27/11/2026)';
   const PAGE = 50;
 
   // Tên cột — PHẢI khớp tab TonKho_M02 (M2_PUSH_COLUMNS trong main.js của app PC).
@@ -1510,7 +1510,7 @@
     { key: 'sulfo', label: 'Sulfo' }, { key: 'aoz', label: 'AOZ' }, { key: 'cap', label: 'CAP' },
   ];
   const KS_MARKETS = ['NHẬT', 'EU', 'ASC', 'MỸ', 'HQ', 'MKS'];
-  const M8 = { ks: 'history', hsort: 'new', /* bản 1.8: mở luôn "Lô đã kiểm" (trang mặc định) */ inp: load('klanan.ksInput', {}), q: '', mk: '', hq: '', limit: PAGE, rcf: {}, hcf: {} /* bản 1.07: lọc nhiều cột (Quy định / Lô đã kiểm) */, dataOf: null, rules: null, hist: null };
+  const M8 = { ks: 'history', hsort: 'new', /* bản 1.8: mở luôn "Lô đã kiểm" (trang mặc định) */ inp: load('klanan.ksInput', {}), q: '', mk: '', hq: '', limit: PAGE, nq: '', rcf: {}, hcf: {} /* bản 1.07: lọc nhiều cột (Quy định / Lô đã kiểm) */, dataOf: null, rules: null, hist: null };
   // Mở rộng dòng rút gọn "~{...}" do PC 5.0 gửi về đúng khuôn bản ghi cũ (để phần hiển thị / tìm kiếm không phải đổi).
   function ksExpand(v) {
     if (typeof v !== 'string' || v.charAt(0) !== '~') return v;
@@ -1659,6 +1659,76 @@
     return `<span class="ks-dtcode ${fail ? 'fail' : 'pass'}">${esc(c)}</span>` + (fail ? `<span class="ks-badge fail">${esc(datText || 'KHÔNG ĐẠT')}</span>` : '');
   }
 
+
+  // ---- TÔM NHẬP KHẨU (PC 1.175, bản ĐT 2.5): dòng `i:nk:<id>` = 1 Size của 1 phiếu (đặc tả: kholanh-csharp docs/DONG-BO-DIEN-THOAI.md).
+  // Tra cứu giống PC (KhangSinhNhapKhau.ParseQuery / Find): TP · Size · INV · Contract · nước · số phiếu. CHỈ XEM.
+  const nkAlnum = (v) => norm(v).replace(/[^a-z0-9]/g, '');
+  function nkData() {
+    const rows = state.ks && state.ks.rows;
+    if (M8.nkSrc === rows && M8.nkList) return M8.nkList;
+    const list = [];
+    Object.keys(rows || {}).forEach((k) => {
+      if (!k.startsWith('i:nk:')) return;
+      let o; try { o = JSON.parse(rows[k]); } catch (e) { return; }
+      if (!o || typeof o !== 'object') return;
+      o.g = Array.isArray(o.g) ? o.g : []; o.x = Array.isArray(o.x) ? o.x : [];
+      o._hay = nkAlnum([o.inv, o.ct, o.c, o.so, o.h].join(' '));
+      o._sz = String(o.sz || '').replace(/\s+/g, '');
+      list.push(o);
+    });
+    list.sort((a, b) => String(b.dn || b.d || '').localeCompare(String(a.dn || a.d || '')) || String(a.sz).localeCompare(String(b.sz), undefined, { numeric: true }));
+    M8.nkSrc = rows; M8.nkList = list;
+    return list;
+  }
+  function nkParse(q) {
+    let t = ' ' + String(q || '') + ' ';
+    const r = { tp: '', size: '', words: [] };
+    let m = /\btp\s*-?\s*(\d+)/i.exec(t); if (m) { r.tp = m[1]; t = t.replace(m[0], ' '); }
+    m = /(\d{2,3})\s*\/\s*(\d{2,3})/.exec(t);
+    if (m) { r.size = m[1] + '/' + m[2]; t = t.replace(m[0], ' '); }
+    else if ((m = /\bsize\s*(\d{2,3})\b/i.exec(t))) { r.size = m[1]; t = t.replace(m[0], ' '); }
+    r.words = t.split(/\s+/).map(nkAlnum).filter((w) => w && w !== 'size' && w !== 'tp');
+    return r;
+  }
+  function nkMatch(o, p, useSize) {
+    if (p.tp && String(o.tp || '').replace(/^0+/, '') !== p.tp.replace(/^0+/, '')) return false;
+    if (useSize && p.size && o._sz !== p.size) return false;
+    return p.words.every((w) => o._hay.includes(w) || (/^\d+$/.test(w) && String(o.tp || '').replace(/^0+/, '') === w.replace(/^0+/, '')));
+  }
+  function nkCard(o) {
+    const nhiem = o.x.length > 0;
+    const nn = o.x.length;
+    const sum = o.g.map((g) => `${esc(g[2])} mẫu <b>${esc(g[0])}</b>`).join(' · ');
+    const kq = o.g.length === 1 && o.g[0][1] ? `<div class="ks-rule-dat">${esc(o.g[0][1])}</div>` : '';
+    const xs = o.x.map((x) => `<div class="nk-x"><b>Mẫu ${esc(x[0])}</b>${x[1] ? ' · kiện ' + esc(x[1]) : ''}: ${(x[2] || []).map((c) => esc(c[0]) + ' ' + esc(c[1])).join(', ')}${x[3] ? '<br><small>' + esc(x[3]) + (x[4] ? ' — ' + esc(x[4]) : '') + (x[5] ? ' · ' + esc(x[5]) : '') + '</small>' : ''}</div>`).join('');
+    return `<li class="ks-rule ${nhiem ? 'warn' : ''}">
+      <div class="ks-rule-top"><b>${o.tp ? 'TP' + esc(o.tp) + ' · ' : ''}Size ${esc(o.sz)}</b><span class="ks-top-r"><span class="ks-badge ${nhiem ? 'warn' : 'pass'}">${nhiem ? nn + ' MẪU NHIỄM' : 'ĐẠT'}</span></span></div>
+      <div class="ks-rule-dat">${esc(o.n)} mẫu: ${sum || '—'}${nhiem ? ' · <b>' + nn + ' mẫu nhiễm</b>' : ''}</div>${kq}${xs}
+      <div class="ks-rule-dat">${esc(o.h || '')}${o.c ? ' · ' + esc(o.c) : ''} · INV ${esc(o.inv || '—')}${o.ct ? ' · ' + esc(o.ct) : ''}</div>
+      <div class="ks-rule-dat">${o.dn ? 'Nhập ' + esc(ksDmy(o.dn)) + ' · ' : ''}${o.kien ? esc(o.kien) + ' kiện · ' : ''}Phiếu ${esc(o.so || '—')}${o.d ? ' (' + esc(ksDmy(o.d)) + ')' : ''}</div>
+    </li>`;
+  }
+  function renderKsNk() {
+    const box = $('nkList'); if (!box) return;
+    const all = nkData();
+    if (!all.length) { box.innerHTML = emptyHtml('Chưa có tôm nhập khẩu', 'PC nạp phiếu “Tôm nhập khẩu” (Kết quả kháng sinh) và đồng bộ điện thoại thì dữ liệu hiện ở đây.'); return; }
+    const p = nkParse(M8.nq);
+    const has = p.tp || p.size || p.words.length;
+    let rows = all.filter((o) => nkMatch(o, p, true));
+    let note = '';
+    if (has && !rows.length && p.size) {
+      const other = all.filter((o) => nkMatch(o, p, false));
+      if (other.length) {
+        const sizes = Array.from(new Set(other.map((o) => o.sz)));
+        box.innerHTML = emptyHtml('Không có Size ' + p.size, (p.tp ? 'TP' + p.tp : 'Mã này') + ' chỉ có Size: ' + sizes.join(', '));
+        return;
+      }
+    }
+    if (!has) note = `<p class="ks-note">Gõ để tra: <b>TP143 size 31/40</b>, số INV, Contract hoặc nước. Đang có ${fmt(all.length)} dòng (mỗi Size một dòng).</p>`;
+    box.innerHTML = rows.length ? `${note}<p class="list-meta">${fmt(rows.length)} kết quả${has ? '' : ' mới nhất'}</p><ul class="ks-rules">${rows.slice(0, M8.limit).map(nkCard).join('')}</ul>${rows.length > M8.limit ? `<button type="button" class="more-btn" id="ksMore">Xem thêm (${fmt(rows.length - M8.limit)})</button>` : ''}`
+      : emptyHtml('Không có kết quả khớp', 'Thử TP, Size, INV, Contract hoặc nước khác.');
+  }
+
   function renderM8() {
     document.querySelectorAll('#m8KsSeg .seg').forEach((b) => b.classList.toggle('is-on', b.dataset.ks === M8.ks));
     const body = $('m8Body');
@@ -1668,7 +1738,7 @@
     // Khung đã dựng đúng chế độ → chỉ làm mới danh sách / kết quả / ghi chú, giữ nguyên ô đang gõ.
     if (body.dataset.built === M8.ks && body.firstElementChild) {
       const sn = $('ksSrc'); if (sn) sn.innerHTML = src;
-      if (M8.ks === 'lookup') renderKsResult(); else if (M8.ks === 'rules') renderKsRules(); else renderKsHist();
+      if (M8.ks === 'lookup') renderKsResult(); else if (M8.ks === 'rules') renderKsRules(); else if (M8.ks === 'nk') renderKsNk(); else renderKsHist();
       return;
     }
     body.dataset.built = M8.ks;
@@ -1681,6 +1751,11 @@
         </div>
         <div id="ksResult"></div><div id="ksSrc">${src}</div>`;
       renderKsResult();
+      return;
+    }
+    if (M8.ks === 'nk') {
+      body.innerHTML = `<div class="search-row"><div class="search-flex"><input type="search" class="search" id="nkQ" placeholder="VD: TP143 size 31/40 · INV · Contract · Ấn Độ" value="${esc(M8.nq)}" autocomplete="off"></div></div><div id="nkList"></div>`;
+      renderKsNk();
       return;
     }
     if (M8.ks === 'rules') {
@@ -4492,7 +4567,7 @@
   });
   $('m8Body').addEventListener('click', (e) => {
     if (e.target.id === 'ksClear') { M8.inp = {}; save('klanan.ksInput', M8.inp); $('m8Body').dataset.built = ''; renderM8(); return; }
-    if (e.target.id === 'ksMore') { M8.limit += PAGE; M8.ks === 'rules' ? renderKsRules() : renderKsHist(); return; }
+    if (e.target.id === 'ksMore') { M8.limit += PAGE; M8.ks === 'rules' ? renderKsRules() : M8.ks === 'nk' ? renderKsNk() : renderKsHist(); return; }
     const mk = e.target.closest('[data-ksmk]');
     if (mk) { M8.mk = mk.dataset.ksmk; M8.limit = PAGE; document.querySelectorAll('[data-ksmk]').forEach((b) => b.classList.toggle('is-on', b === mk)); renderKsRules(); }
   });
@@ -4501,6 +4576,7 @@
     if (f) { M8.inp[f] = e.target.value; save('klanan.ksInput', M8.inp); renderKsResult(); return; }
     if (e.target.id === 'ksRuleQ') { M8.q = e.target.value; M8.limit = PAGE; clearTimeout(searchTimer); searchTimer = setTimeout(renderKsRules, 150); return; }
     if (e.target.id === 'ksHistSort') { M8.hsort = e.target.value; M8.limit = PAGE; renderKsHist(); return; }
+    if (e.target.id === 'nkQ') { M8.nq = e.target.value; M8.limit = PAGE; clearTimeout(searchTimer); searchTimer = setTimeout(renderKsNk, 150); return; }
     if (e.target.id === 'ksHistQ') { M8.hq = e.target.value; M8.limit = PAGE; clearTimeout(searchTimer); searchTimer = setTimeout(renderKsHist, 150); }
   });
   // Quay lại app sau khi để nền: tải lại màn hình đang xem nếu số liệu đã cũ.

@@ -25,7 +25,7 @@
   // Tăng mỗi lần sửa app.js — hiện ở cuối Cài đặt để kiểm tra điện thoại đang chạy đúng bản chưa.
   // ĐÁNH SỐ LẠI TỪ 1.1 (30/09/2026, trước đó 3.x) — tăng mỗi lần phát hành; nhớ đổi cả ?v= trong index.html
   // và "version" trong package.json (GitHub Actions lấy số đó làm versionName của APK).
-  const APP_VERSION = '2.5 (27/11/2026)';
+  const APP_VERSION = '2.6 (28/11/2026)';
   const PAGE = 50;
 
   // Tên cột — PHẢI khớp tab TonKho_M02 (M2_PUSH_COLUMNS trong main.js của app PC).
@@ -2544,7 +2544,7 @@
   function renderHome() {
     renderHomeLx();
     const hasKho = SOURCES.length > 0;
-    $('homeSearchRow').hidden = !hasKho; // chỉ có quyền Lịch xuất / Tra cứu: không có kho để tìm mã
+    $('homeSearchRow').hidden = false; // ĐT 2.6: tìm nhanh toàn app — luôn hiện (kể cả khi chỉ có quyền Lịch xuất / Tra cứu)
     $('homeKhoTitle').hidden = !hasKho;
     $('homePhieuWrap').hidden = !tabOk('phieu'); // Phiếu nằm cuối Tổng quan (chỉ khi có kho + quyền tạo phiếu)
     if (tabOk('phieu')) renderPhieu();
@@ -2581,12 +2581,86 @@
     });
     return { units: [...units.values()], kg: Math.round(kg * 100) / 100, skipped };
   }
-  // Tìm mã trong TẤT CẢ kho đã lưu trên máy (không tải thêm gì) — hiện tối đa 40 dòng, kèm tên kho.
+  // ĐT 2.6 — TÌM NHANH TOÀN APP (như Ctrl+K trên PC): một ô tìm ở Trang chủ gom kết quả từ mọi nơi đã lưu trên máy (không tải thêm):
+  //   Chức năng (tab / công cụ / cài đặt) · Kho (mã hàng) · Lịch xuất (LSX, cont, khách) · Kháng sinh (lô đã kiểm, tôm nhập khẩu) · Phiếu.
+  // Bấm 1 dòng kết quả → mở đúng chỗ (chi tiết lịch xuất, tab Tra cứu đã gõ sẵn từ khóa, phiếu đã mở sẵn…).
+  const GS_MAX = 6;
+  function gsFuncs() { // [tên, từ khóa thêm, hành động]
+    const L = [];
+    const add = (name, kw, act, ok) => { if (ok !== false) L.push({ name, hay: norm(name + ' ' + kw), act }); };
+    add('Tổng quan', 'trang chủ home', () => switchTab('home'), tabOk('home'));
+    add('Tồn kho', 'kho xuất hàng mã hàng', () => switchTab('xuat'), tabOk('xuat'));
+    add('Báo cáo', 'báo cáo tồn tổng hợp', () => switchTab('baocao'), tabOk('baocao'));
+    const ksGo = (mode) => () => { M8.ks = mode; const bd = $('m8Body'); if (bd) bd.dataset.built = ''; switchTab('m8'); };
+    add('Tra cứu kháng sinh', 'kháng sinh tra cứu kết quả kiểm', ksGo('history'), tabOk('m8'));
+    add('Kháng sinh › Lô đã kiểm', 'lô kiểm lịch sử mks', ksGo('history'), tabOk('m8'));
+    add('Kháng sinh › Nhập kết quả (đạt / không đạt)', 'tra kết quả enro cipro oxy doxy sulfo aoz cap', ksGo('lookup'), tabOk('m8'));
+    add('Kháng sinh › Quy định', 'quy định ký hiệu thị trường', ksGo('rules'), tabOk('m8'));
+    add('Kháng sinh › Tôm nhập khẩu', 'tôm nk tp inv contract', ksGo('nk'), tabOk('m8'));
+    add('Công cụ', 'công cụ tools', () => switchTab('tools'), tabOk('tools'));
+    TOOL_LIST.filter((t) => t.ok()).forEach((t) => add(t.name, t.sub, () => switchTab(t.id)));
+    [['soan', 'Phiếu đang soạn'], ['cho', 'Phiếu chờ PC'], ['nhan', 'Phiếu đã nhận'], ['huy', 'Phiếu đã hủy'], ['pc', 'Phiếu từ PC']].forEach(([g, n]) =>
+      add(n, 'phiếu xuất', () => { state.phieuSeg = g; switchTab('home'); setTimeout(() => { const w = $('homePhieuWrap'); if (w && !w.hidden) w.scrollIntoView({ block: 'start' }); }, 80); }, tabOk('phieu')));
+    add('Cài đặt', 'tài khoản kết nối giao diện cỡ chữ đăng xuất', () => openSettings(false));
+    return L;
+  }
+  function gsRow(type, id, title, sub, right) {
+    return `<li class="row"><button type="button" class="row-btn" data-gs="${type}" data-gsid="${esc(id)}"><div><div class="row-title">${title}</div>${sub ? `<div class="row-sub">${sub}</div>` : ''}</div>${right ? `<div class="qty">${right}</div>` : ''}</button></li>`;
+  }
+  function gsSection(title, n, rows, more) {
+    return `<h3 class="hsec">${esc(title)} <small>${fmt(n)} kết quả${more ? ' · hiện ' + GS_MAX + ' đầu' : ''}</small></h3><ul class="list">${rows.join('')}</ul>`;
+  }
+  function gsLich(qs) {
+    if (!canLx() || !state.lx) return '';
+    const hay = (x) => norm([x.lsx, x.cont, x.khach, x.matHang, x.thiTruong, lxDmy(x.ngay), x.ngay].join(' '));
+    const hits = lxEff().filter((x) => { const h = hay(x); return qs.every((w) => h.includes(w)); })
+      .sort((a, b) => String(b.ngay).localeCompare(String(a.ngay)));
+    if (!hits.length) return '';
+    return gsSection('Lịch xuất / nhập', hits.length, hits.slice(0, GS_MAX).map((x) => gsRow('lx', x.id,
+      esc(lxIn(x) ? (lxRef(x) || '—') : lxLabel(x.lsx)), `<span>${esc(lxDmy(x.ngay))}</span>${x.cont ? `<span>Cont ${esc(x.cont)}</span>` : ''}${x.khach ? `<span>${esc(x.khach)}</span>` : ''}`,
+      `<span class="lx-pill st-${x.st}">${esc(lxStl(x) || '')}</span>`)), hits.length > GS_MAX);
+  }
+  function gsKs(q, qs) {
+    if (!canView('m08') || !(state.m08 && state.m08.data) && !(state.ks && state.ks.rows)) return '';
+    let out = '';
+    try {
+      const D = ksData();
+      const hit = ksHistMatcher(q);
+      const rows = (D.hist || []).filter(hit);
+      if (rows.length) out += gsSection('Kháng sinh › Lô đã kiểm', rows.length, rows.slice(0, GS_MAX).map((r) => gsRow('ks', '', ksBatchLabel(r.batch),
+        `<span>${esc(ksDmy(r.date))}</span>${r.kyhieu ? `<span>${esc(r.kyhieu)}</span>` : ''}${r.note ? `<span>${esc(r.note)}</span>` : ''}`, ksVerdict(r))), rows.length > GS_MAX);
+      const p = nkParse(q);
+      if (p.tp || p.size || p.words.length) {
+        const nk = nkData().filter((o) => nkMatch(o, p, true));
+        if (nk.length) out += gsSection('Kháng sinh › Tôm nhập khẩu', nk.length, nk.slice(0, GS_MAX).map((o) => gsRow('nk', '',
+          `${o.tp ? 'TP' + esc(o.tp) + ' · ' : ''}Size ${esc(o.sz)}`, `<span>INV ${esc(o.inv || '—')}</span>${o.c ? `<span>${esc(o.c)}</span>` : ''}<span>${esc(o.n)} mẫu</span>`,
+          `<span class="ks-badge ${o.x.length ? 'warn' : 'pass'}">${o.x.length ? o.x.length + ' MẪU NHIỄM' : 'ĐẠT'}</span>`)), nk.length > GS_MAX);
+      }
+    } catch (e) { /* dữ liệu kháng sinh lỗi không được làm hỏng ô tìm */ }
+    return out;
+  }
+  function gsPhieu(qs) {
+    if (!tabOk('phieu') || !(state.phieu && state.phieu.data)) return '';
+    const g = phieuGroups();
+    const where = (p) => (g.pc.includes(p) ? 'pc' : g.cho.includes(p) ? 'cho' : g.nhan.includes(p) ? 'nhan' : g.huy.includes(p) ? 'huy' : '');
+    const hits = ((state.phieu.data.list) || []).filter((p) => {
+      const h = norm([p.maPhieu, p.nguoiTao, p.ghiChu, p.trangThai, (p.items || []).map((it) => [it.maHang, it.soLo, it.size].join(' ')).join(' ')].join(' '));
+      return qs.every((w) => h.includes(w)) && where(p);
+    }).sort((a, b) => String(b.ngayTao || '').localeCompare(String(a.ngayTao || '')));
+    if (!hits.length) return '';
+    return gsSection('Phiếu', hits.length, hits.slice(0, GS_MAX).map((p) => { const st = phieuStatus(p, lastPushOfPhieu(p)); return gsRow('px', p.id, esc(p.maPhieu),
+      `<span>${esc(fmtTime(p.ngayTao))}</span>${p.nguoiTao ? `<span>${esc(p.nguoiTao)}</span>` : ''}`, `<span class="status ${st.cls}">${esc(st.text)}</span>`); }), hits.length > GS_MAX);
+  }
+  // Tìm mã trong TẤT CẢ kho đã lưu trên máy (không tải thêm gì) — kho hiện tối đa 40 dòng, kèm tên kho; các nơi khác tối đa 6 dòng / nhóm.
   function renderHomeSearch() {
     const box = $('homeResults');
-    const qs = norm(state.q.home || '').trim().split(/\s+/).filter(Boolean);
+    const q = String(state.q.home || '').trim();
+    const qs = norm(q).split(/\s+/).filter(Boolean);
     $('homeMain').hidden = qs.length > 0;
     if (!qs.length) { box.innerHTML = ''; return; }
+    const fn = gsFuncs().filter((f) => qs.every((w) => f.hay.includes(w))).slice(0, 5);
+    const fnHtml = fn.length ? `<h3 class="hsec">Chức năng</h3><ul class="list">${fn.map((f, i) => gsRow('fn', String(i), esc(f.name), '', '<span class="lx-go">›</span>')).join('')}</ul>` : '';
+    window.__gsFn = fn;
     const hits = [];
     SOURCES.forEach((k) => { const lotHit = makeLotMatch(qs, state.lots[k]); (state.lots[k] || []).forEach((l) => { if (lotHit(l)) hits.push([k, l]); }); });
     const missing = SOURCES.filter((k) => !(state[k] && state[k].data)).map((k) => KHO[k].name);
@@ -2595,12 +2669,38 @@
     // không cộng lẫn; kèm tổng KL nếu tính được. Số lượng = còn lại sau phiếu đang soạn (giống cột SL của từng dòng).
     const T = totalsOf(hits);
     const sumHtml = hits.length ? `<div class="home-sum">
-        <div class="hs-cell"><small>Tổng số lượng</small><b>${T.units.map(([u, q]) => `${fmt(Math.round(q * 100) / 100)}${u ? ' <small>' + esc(u) + '</small>' : ''}`).join('<span class="hs-sep"> + </span>')}</b></div>
+        <div class="hs-cell"><small>Tổng số lượng</small><b>${T.units.map(([u, q2]) => `${fmt(Math.round(q2 * 100) / 100)}${u ? ' <small>' + esc(u) + '</small>' : ''}`).join('<span class="hs-sep"> + </span>')}</b></div>
         ${T.kg > 0 ? `<div class="hs-cell"><small>Tổng KL</small><b>≈ ${esc(fmtKg(T.kg))} <small>kg</small></b></div>` : ''}
         ${T.skipped ? `<p class="hs-note">Không cộng ${fmt(T.skipped)} dòng Tồn kho An An trùng mã với Tồn vị trí (cùng 1 hàng).</p>` : ''}
       </div>` : '';
-    box.innerHTML = `<div class="home-hint">${fmt(hits.length)} dòng khớp trong các kho đã lưu${hits.length > 40 ? ' · hiện 40 dòng đầu' : ''}${missing.length ? ` · chưa tải: ${esc(missing.join(', '))}` : ''}</div>` + sumHtml +
-      (hits.length ? `<ul class="list">${hits.slice(0, 40).map(([k, l]) => lotRowHtml(k, l, KHO[k].name)).join('')}</ul>` : emptyHtml('Không tìm thấy', 'Thử vài ký tự cuối của mã hàng, hoặc mở kho chưa tải để tìm trong kho đó.'));
+    const khoHtml = SOURCES.length ? `<h3 class="hsec">Kho <small>${fmt(hits.length)} dòng khớp${hits.length > 40 ? ' · hiện 40 dòng đầu' : ''}${missing.length ? ` · chưa tải: ${esc(missing.join(', '))}` : ''}</small></h3>` + sumHtml +
+      (hits.length ? `<ul class="list">${hits.slice(0, 40).map(([k, l]) => lotRowHtml(k, l, KHO[k].name)).join('')}</ul>` : '<p class="home-hint">Không có mã nào khớp trong các kho đã lưu.</p>') : '';
+    const others = gsLich(qs) + gsKs(q, qs) + gsPhieu(qs);
+    box.innerHTML = fnHtml + (hits.length ? khoHtml : '') + others + (!fn.length && !hits.length && !others
+      ? emptyHtml('Không tìm thấy', 'Thử vài ký tự cuối của mã hàng, số LSX, số lô kháng sinh, mã phiếu, hoặc tên chức năng (VD "scan", "xếp cont"). Kho chưa tải: mở kho đó để tìm trong kho.') + (SOURCES.length ? khoHtml : '') : '');
+  }
+  // Bấm 1 dòng kết quả (không phải dòng kho — dòng kho do openLotFrom xử lý).
+  function openGsFrom(e) {
+    const b = e.target.closest('[data-gs]'); if (!b) return false;
+    const q = String(state.q.home || '').trim(), id = b.dataset.gsid, t = b.dataset.gs;
+    const clear = () => { state.q.home = ''; const i = $('homeSearch'); if (i) i.value = ''; renderHomeSearch(); };
+    if (t === 'fn') { const f = (window.__gsFn || [])[Number(id)]; if (f) { clear(); f.act(); } return true; }
+    if (t === 'lx') { openLxDetail(id); return true; }
+    if (t === 'ks' || t === 'nk') {
+      if (t === 'ks') { M8.ks = 'history'; M8.hq = q; M8.hcf = {}; } else { M8.ks = 'nk'; M8.nq = q; }
+      M8.limit = PAGE; const bd = $('m8Body'); if (bd) bd.dataset.built = '';
+      clear(); switchTab('m8'); return true;
+    }
+    if (t === 'px') {
+      const p = findPhieu(id); if (!p) return true;
+      const g = phieuGroups();
+      state.phieuSeg = g.pc.includes(p) ? 'pc' : g.cho.includes(p) ? 'cho' : g.nhan.includes(p) ? 'nhan' : 'huy';
+      state.open['px:' + p.id] = true; state.pcf = {}; state.phieuMonth = '';
+      clear(); renderHome();
+      setTimeout(() => { const w = $('homePhieuWrap'); if (w) w.scrollIntoView({ block: 'start' }); }, 80);
+      return true;
+    }
+    return false;
   }
 
   // Xem / sửa / gửi phiếu đang soạn
@@ -4496,7 +4596,7 @@
     toast(`Đã thêm ${fmt(n)} dòng (SL ${fmt(tong)}) vào phiếu — sửa số lượng từng dòng trong phiếu nếu cần.`);
   });
   $('xuatList').addEventListener('click', openLotFrom);
-  $('homeResults').addEventListener('click', openLotFrom);
+  $('homeResults').addEventListener('click', (e) => { if (openGsFrom(e)) return; openLotFrom(e); });
   $('khoPicker').addEventListener('click', openKhoPicker);
   $('homeKho').addEventListener('click', (e) => {
     const k = e.target.closest('[data-kho]');
